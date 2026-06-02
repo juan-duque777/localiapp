@@ -19,7 +19,7 @@ function totalPrice() {
 // ─── Conexión al Backend (Clever Cloud) ──────────────────────────────
 async function cargarProductosDesdeBD() {
     try {
-        const respuesta = await fetch('http://localhost:3000/api/productos');
+        const respuesta = await fetch('/api/productos');
         if (!respuesta.ok) throw new Error('Error en el servidor');
 
         const productosMySQL = await respuesta.json();
@@ -126,7 +126,7 @@ function buildCard(product) {
 
     // Verificamos si existe la foto guardada en el backend
         const medioVisual = product.imagen_url 
-        ? `<img src="http://localhost:3000${product.imagen_url}" alt="${product.name}" style="width:100%; height:100%; object-fit:cover;">`
+        ? `<img src="${product.imagen_url}" alt="${product.name}" style="width:100%; height:100%; object-fit:cover;">`
         : `<div class="product-img-placeholder">${product.emoji}</div>`;
 
     card.innerHTML = `
@@ -352,7 +352,7 @@ if(checkoutForm) {
 
         // Mandamos el paquete por el tubo (Fetch) a nuestra nueva ruta
 // Mandamos el paquete por el tubo (Fetch) a nuestra nueva ruta
-        fetch('http://localhost:3000/api/pedidos', {
+        fetch('/api/pedidos', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(pedidoFinal)
@@ -549,7 +549,7 @@ setInterval(async () => {
     if(!miTicket) return; // Si no ha comprado nada, no hace nada
 
     try {
-        const res = await fetch(`http://localhost:3000/api/pedidos/${miTicket}`);
+        const res = await fetch(`/api/pedidos/${miTicket}`);
         if (!res.ok) return;
         const data = await res.json();
         
