@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Localiapp – Pedidos a negocios de tu barrio">
+    <meta name="theme-color" content="#3D9EAB">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#3D9EAB">
+    <title>Localiapp – Pedidos</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json">
+
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <!-- Fuente Nunito -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <!-- Iconos Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Estilos -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- ══════════════════════════════════════ -->
+    <!--  HEADER                                -->
+    <!-- ══════════════════════════════════════ -->
+    <header class="top-header">
+
+        <div class="header-row">
+            <!-- Logo + Marca -->
+            <a href="#" class="logo-container">
+                <img src="img/logo.png" alt="Logo Localiapp">
+                <div class="brand-block">
+                    <div class="brand-name">Locali<span>app</span></div>
+                    <div class="location-tag">
+                        <i class="fa-solid fa-location-dot"></i>
+                        Barrio La Nohora 
+                    </div>
+                </div>
+            </a>
+            <!-- Acciones del header -->
+        <div class="header-actions">
+                
+                <div class="nav-item">
+                    <button class="icon-btn" id="bell-btn" aria-label="Notificaciones">
+                        <i class="fa-regular fa-bell"></i>
+                        <span class="badge" id="notif-badge">2</span> </button>
+                    
+                    <div class="dropdown-menu" id="notif-dropdown">
+                        <div class="dropdown-header">
+                            <h4>Notificaciones</h4>
+                        </div>
+                        <ul class="dropdown-list">
+                            <li>
+                                <div class="icon-circle bg-teal"><i class="fa-solid fa-motorcycle"></i></div>
+                                <div>
+                                    <p class="notif-title">Pedido #12 en camino</p>
+                                    <p class="notif-desc">El domiciliario está llegando.</p>
+                                </div>
+                            </li>
+                            <li>
+                                <div class="icon-circle bg-coral"><i class="fa-solid fa-gift"></i></div>
+                                <div>
+                                    <p class="notif-title">¡Bienvenido a Localiapp!</p>
+                                    <p class="notif-desc">Pide tu primera orden ahora.</p>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="nav-item">
+                    <button class="icon-btn" id="user-btn" aria-label="Mi Cuenta">
+                        <i class="fa-regular fa-user"></i>
+                    </button>
+                    
+                    <div class="dropdown-menu" id="user-dropdown">
+                        
+                        <div id="view-unlogged">
+                            <p style="font-size: 0.85rem; color: var(--warm-2); margin-bottom: 12px; text-align: center;">Inicia sesión para pedir</p>
+                            <button class="btn btn-outline" id="btn-login-header" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" style="width: 16px;">
+                                Continuar con Google
+                            </button>
+                        </div>
+
+                        <div id="view-logged" style="display: none;">
+                            <div class="user-profile-header">
+                                <div class="user-avatar">J</div>
+                                <div>
+                                    <p class="user-name">Juan Pérez</p>
+                                    <p class="user-email">juan@gmail.com</p>
+                                </div>
+                            </div>
+                            <ul class="user-links">
+                                <li><a href="#"><i class="fa-solid fa-clock-rotate-left"></i> Mis Pedidos</a></li>
+                                <li><a href="admin.html" class="admin-link"><i class="fa-solid fa-screwdriver-wrench"></i> Panel Administrador</a></li>
+                                <li><a href="#" id="btn-logout-header" style="color: var(--coral);"><i class="fa-solid fa-arrow-right-from-bracket"></i> Cerrar Sesión</a></li>
+                            </ul>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Barra de búsqueda -->
+        <div class="search-bar">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" placeholder="Buscar en el local..." id="search-input" autocomplete="off">
+        </div>
+
+    </header>
+
+    <!-- ══════════════════════════════════════ -->
+    <!--  BANNER PEDIDO ANTICIPADO              -->
+    <!-- ══════════════════════════════════════ -->
+    <div class="promo-banner">
+        <span class="promo-icon">⏰</span>
+        <div class="promo-text">
+            <strong>¡Pide con anticipación!</strong>
+            <span>Elige tu hora y evita las filas</span>
+        </div>
+        <span class="promo-pill">NUEVO</span>
+    </div>
+
+    <!-- ══════════════════════════════════════ -->
+    <!--  CATEGORÍAS                            -->
+    <!-- ══════════════════════════════════════ -->
+    <section class="categories-section">
+        <p class="section-label">Explorar por categoría</p>
+        <nav class="categories" aria-label="Categorías de productos">
+            <button class="cat-btn active" data-cat="todos">
+                <span class="cat-em">🏪</span> Todos
+            </button>
+            <button class="cat-btn" data-cat="comidas">
+                <span class="cat-em">🍔</span> Comidas
+            </button>
+            <button class="cat-btn" data-cat="bebidas">
+                <span class="cat-em">🥤</span> Bebidas
+            </button>
+            <button class="cat-btn" data-cat="panaderia">
+                <span class="cat-em">🍞</span> Panadería
+            </button>
+            <button class="cat-btn" data-cat="aseo">
+                <span class="cat-em">🧴</span> Aseo
+            </button>
+            <button class="cat-btn" data-cat="hogar">
+                <span class="cat-em">🏠</span> Hogar
+            </button>
+        </nav>
+    </section>
+
+    <!-- ══════════════════════════════════════ -->
+    <!--  LISTA DE PRODUCTOS                    -->
+    <!-- ══════════════════════════════════════ -->
+    <section class="products-section">
+        <div class="products-header">
+            <h2 class="products-title" id="section-title">Lo más pedido</h2>
+            <span class="products-count" id="product-count"></span>
+        </div>
+
+        <!-- JS inyecta los productos aquí -->
+        <main class="product-list" id="contenedor-productos" aria-label="Lista de productos"></main>
+    </section>
+
+    <!-- ══════════════════════════════════════ -->
+    <!--  CARRITO FLOTANTE                      -->
+    <!-- ══════════════════════════════════════ -->
+    <div class="floating-cart" id="floating-cart" role="button" tabindex="0" aria-label="Ver pedido">
+        <div class="cart-left">
+            <div class="cart-bubble" id="cart-bubble">0</div>
+            <div>
+                <span class="cart-label">Mi pedido</span>
+                <div class="cart-total" id="cart-total">$0</div>
+            </div>
+        </div>
+        <button class="ver-pedido-btn" id="ver-pedido-btn">
+            Ver pedido <i class="fa-solid fa-arrow-right"></i>
+        </button>
+    </div>
+
+    <div class="modal-overlay" id="checkout-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Tu Pedido 🛵</h2>
+                <button class="close-btn" id="close-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="checkout-items" id="checkout-items"></div>
+                
+                <div class="checkout-total-row">
+                    <span>Total a pagar:</span>
+                    <strong id="checkout-total-price">$0</strong>
+                </div>
+<form id="checkout-form" class="checkout-form">
+                    
+                    <div id="auth-section" class="auth-section">
+                        <h3><i class="fa-solid fa-circle-user"></i> Identifícate</h3>
+                        <p>Para no pedirte tus datos en cada pedido.</p>
+                        <button type="button" class="google-btn" id="google-login-btn">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google">
+                            Continuar con Google
+                        </button>
+                    </div>
+
+                    <div id="delivery-section" class="delivery-section" style="display: none;">
+                        <h3>Datos de entrega</h3>
+                        
+                        <div class="form-group">
+                            <label><i class="fa-solid fa-location-dot"></i> ¿Dónde te lo llevamos?</label>
+                            <div class="location-input-wrapper">
+                                <input type="text" id="client-address" placeholder="Dirección, Casa o Barrio..." required autocomplete="off">
+                                <button type="button" id="get-location-btn" aria-label="Usar mi ubicación" title="Obtener por GPS">
+                                    <i class="fa-solid fa-crosshairs"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group highlight-group">
+                            <label><i class="fa-regular fa-clock"></i> ¿A qué hora lo quieres?</label>
+                            <select id="order-time-type" required>
+                                <option value="Lo antes posible">Lo antes posible (15-20 min)</option>
+                                <option value="Elegir hora">Elegir hora exacta...</option>
+                            </select>
+                            <input type="time" id="custom-time" style="display: none; margin-top: 10px;" class="time-picker">
+                        </div>
+
+                        <div class="form-group">
+                            <label><i class="fa-solid fa-money-bill-wave"></i> Método de pago</label>
+                            <select id="payment-method" required>
+                                <option value="Efectivo">Efectivo (Pago contra entrega)</option>
+                                <option value="Nequi">Nequi / Daviplata</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label><i class="fa-regular fa-comment"></i> Notas (Opcional)</label>
+                            <input type="text" id="order-notes" placeholder="Ej. Sin cebolla, billete de 50..." autocomplete="off">
+                        </div>
+
+                        <button type="submit" class="submit-order-btn">
+                            Confirmar Pedido <i class="fa-solid fa-check"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/script.js"></script>
+</body>
+</html>
+

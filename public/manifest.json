@@ -1,0 +1,15 @@
+{
+  "name": "Localiapp Delivery",
+  "short_name": "Localiapp",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#FFF9F2",
+  "theme_color": "#3D9EAB",
+  "icons": [
+    {
+      "src": "./img/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
