@@ -268,7 +268,6 @@
     </div>
 
     <script>
-const API_URL = 'http://localhost:3000'; // <-- La clave mágica para que no se rompa
 let ultimoPedidoId = 0;
         const fmt = n => '$' + Number(n).toLocaleString('es-CO');
 
@@ -317,7 +316,7 @@ let ultimoPedidoId = 0;
 async function cargarPedidos() {
             const container = document.getElementById('orders-container');
             try {
-                const res = await fetch(`${API_URL}/api/pedidos`);
+                const res = await fetch(`/api/pedidos`);
                 const pedidos = await res.json();
                 
                 // --- LÓGICA DE NOTIFICACIÓN ADMIN ---
@@ -432,7 +431,7 @@ async function cargarPedidos() {
 
         async function cambiarEstadoPedido(id, nuevoEstado, boton) {
             if(boton) boton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-            await fetch(`${API_URL}/api/pedidos/${id}/estado`, {
+            await fetch(`/api/pedidos/${id}/estado`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ estado: nuevoEstado })
@@ -454,7 +453,7 @@ async function cargarPedidos() {
         async function cargarProductosAdmin() {
             const container = document.getElementById('products-container');
             try {
-                const res = await fetch(`${API_URL}/api/productos?admin=true`);
+                const res = await fetch(`/api/productos?admin=true`);
                 const productos = await res.json();
                 container.innerHTML = '';
 
@@ -468,7 +467,7 @@ async function cargarPedidos() {
 
                     // Conectamos la imagen con el host de Node (localhost:3000)
                     const visualizacionMedia = p.imagen_url 
-                        ? `<img src="${API_URL}${p.imagen_url}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;">`
+                        ? `<img src="${p.imagen_url}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;">`
                         : icono;
 
                     const card = document.createElement('div');
@@ -500,7 +499,7 @@ async function cargarPedidos() {
 
         async function cambiarDisponibilidad(id, estaChequeado) {
             const disponible = estaChequeado ? 1 : 0;
-            await fetch(`${API_URL}/api/productos/${id}/disponibilidad`, {
+            await fetch(`/api/productos/${id}/disponibilidad`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ disponible })
@@ -521,7 +520,7 @@ async function cargarPedidos() {
                 color: '#2A1F1A'
             }).then(async (result) => {
                 if (result.isConfirmed) {
-                    await fetch(`${API_URL}/api/productos/${id}`, { method: 'DELETE' });
+                    await fetch(`/api/productos/${id}`, { method: 'DELETE' });
                     Swal.fire({ title: '¡Eliminado!', text: 'El producto ha sido borrado.', icon: 'success', confirmButtonColor: '#3D9EAB' });
                     cargarProductosAdmin();
                 }
@@ -545,10 +544,10 @@ async function cargarPedidos() {
             }
 
             if (idProducto) {
-                await fetch(`${API_URL}/api/productos/${idProducto}`, { method: 'PUT', body: formData });
+                await fetch(`/api/productos/${idProducto}`, { method: 'PUT', body: formData });
                 Swal.fire({ title: '¡Actualizado!', text: 'El producto se modificó correctamente.', icon: 'success', confirmButtonColor: '#3D9EAB' });
             } else {
-                await fetch(`${API_URL}/api/productos`, { method: 'POST', body: formData });
+                await fetch(`/api/productos`, { method: 'POST', body: formData });
                 Swal.fire({ title: '¡Creado!', text: 'El producto se agregó exitosamente al menú.', icon: 'success', confirmButtonColor: '#3D9EAB' });
             }
 
@@ -560,7 +559,7 @@ async function cargarPedidos() {
         // ─── LÓGICA DE REPORTES ───────────────────────────────────────────────
         async function cargarReportes() {
             try {
-                const res = await fetch(`${API_URL}/api/reportes`);
+                const res = await fetch(`/api/reportes`);
                 const data = await res.json();
                 
                 // Extraemos los totales (vienen nulos si la BD está vacía)
