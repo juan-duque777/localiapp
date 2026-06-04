@@ -166,12 +166,21 @@
         </div>
     </aside>
 
-    <main class="main-content">
+   <main class="main-content">
         
         <section id="view-pedidos" class="admin-section active">
-            <div class="section-header">
-                <h2>Pedidos Entrantes</h2>
-                <button class="btn btn-primary btn-sm" onclick="cargarPedidos()"><i class="fa-solid fa-rotate-right"></i></button>
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <h2 style="margin: 0;">Pedidos Entrantes</h2>
+                
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <select id="filtro-tiempo-pedidos" onchange="cargarPedidos()" style="padding: 8px 12px; border-radius: 8px; border: 1px solid #EBE4DD; font-family: 'Nunito', sans-serif; font-weight: 700; color: var(--teal-dark); background: #FFF; outline: none; cursor: pointer;">
+                        <option value="hoy" selected>Solo Hoy</option>
+                        <option value="semana">Esta Semana</option>
+                        <option value="mes">Este Mes</option>
+                        <option value="todos">Todos los tiempos</option>
+                    </select>
+                    <button class="btn btn-primary btn-sm" onclick="cargarPedidos()"><i class="fa-solid fa-rotate-right"></i></button>
+                </div>
             </div>
             <div class="orders-grid" id="orders-container"></div>
         </section>
@@ -184,10 +193,19 @@
             <div class="products-grid" id="products-container"></div>
         </section>
 
-<section id="view-reportes" class="admin-section">
-            <div class="section-header">
-                <h2>Dashboard de Ventas</h2>
-                <button class="btn btn-outline btn-sm" onclick="cargarReportes()" style="width: auto;"><i class="fa-solid fa-rotate-right"></i> Actualizar</button>
+        <section id="view-reportes" class="admin-section">
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <h2 style="margin: 0;">Dashboard de Ventas</h2>
+                
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <select id="filtro-tiempo-reportes" onchange="cargarReportes()" style="padding: 8px 12px; border-radius: 8px; border: 1px solid #EBE4DD; font-family: 'Nunito', sans-serif; font-weight: 700; color: var(--teal-dark); background: #FFF; outline: none; cursor: pointer;">
+                        <option value="hoy">Solo Hoy</option>
+                        <option value="semana">Esta Semana</option>
+                        <option value="mes" selected>Este Mes</option>
+                        <option value="todos">Todos los tiempos</option>
+                    </select>
+                    <button class="btn btn-outline btn-sm" onclick="cargarReportes()" style="width: auto;"><i class="fa-solid fa-rotate-right"></i> Actualizar</button>
+                </div>
             </div>
             
             <div id="report-container">
@@ -225,6 +243,7 @@
                 </div>
             </div>
         </section>
+        
     </main>
 
 <div class="modal-overlay" id="product-modal">
@@ -318,10 +337,17 @@ document.getElementById('btn-close-prod-modal').addEventListener('click', () => 
 // ─── LÓGICA DE PEDIDOS ───────────────────────────────────────────────
 async function cargarPedidos() {
     const container = document.getElementById('orders-container');
+    
+    // 1. LEEMOS LO QUE DICE EL SELECTOR DE FECHAS EN EL HTML
+    const filtroElement = document.getElementById('filtro-tiempo-pedidos');
+    const filtro = filtroElement ? filtroElement.value : 'hoy';
+
     try {
-        const res = await fetch(`${API_URL}/api/pedidos`);
+        // 2. LE ENVIAMOS ESE FILTRO AL SERVIDOR EN LA URL (?filtro=...)
+        const res = await fetch(`${API_URL}/api/pedidos?filtro=${filtro}`);
         const pedidos = await res.json();
         
+        // --- LÓGICA DE NOTIFICACIÓN ADMIN ---
         if (pedidos.length > 0) {
             const maxId = Math.max(...pedidos.map(p => p.id));
             if (ultimoPedidoId !== 0 && maxId > ultimoPedidoId) {
@@ -338,7 +364,7 @@ async function cargarPedidos() {
         container.innerHTML = '';
 
         if(pedidos.length === 0) {
-            container.innerHTML = '<p style="text-align:center; padding: 20px; color:#aaa;">No hay pedidos activos.</p>';
+            container.innerHTML = '<p style="text-align:center; padding: 20px; color:#aaa;">No hay pedidos en esta fecha.</p>';
             return;
         }
 
@@ -366,9 +392,10 @@ async function cargarPedidos() {
                 if (match) {
                     const coordenadas = match[1].replace(' ', '');
                     direccionLimpia = '📍 Ubicación enviada por GPS';
+                    // Link oficial y corregido de Google Maps
                     btnGoogleMaps = `
                         <div style="margin-top: 8px;">
-                            <a href="https://www.google.com/maps/search/?api=1&query=${coordenadas}" target="_blank" 
+                            <a href="https://www.google.com/maps?q=${coordenadas}" target="_blank" 
                                style="display: inline-flex; align-items: center; gap: 6px; background: var(--teal-light); color: var(--teal-dark); 
                                text-decoration: none; font-weight: 800; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; border: 1px solid #A8E0E8; transition: 0.2s;">
                                <i class="fa-solid fa-map-location-dot"></i> Abrir en Maps
@@ -378,6 +405,7 @@ async function cargarPedidos() {
                 }
             }
 
+            // ─── LISTA DE PRODUCTOS DEL PEDIDO ───
             let listaProductosHTML = '<div style="margin-top: 15px; border-top: 2px dashed #eee; padding-top: 10px;">';
             listaProductosHTML += '<h5 style="color: var(--teal-dark); margin-bottom: 8px; font-size: 0.85rem; text-transform: uppercase;">Orden:</h5>';
             
@@ -431,7 +459,7 @@ async function cargarPedidos() {
             container.appendChild(card);
         });
     } catch (error) {
-        container.innerHTML = '<p style="text-align:center;">Error cargando pedidos o la BD está vacía.</p>';
+        container.innerHTML = '<p style="text-align:center;">Error cargando pedidos.</p>';
     }
 }
 
@@ -562,8 +590,11 @@ document.getElementById('product-form').addEventListener('submit', async (e) => 
 
 // ─── LÓGICA DE REPORTES ───────────────────────────────────────────────
 async function cargarReportes() {
+    const filtroElement = document.getElementById('filtro-tiempo-reportes');
+    const filtro = filtroElement ? filtroElement.value : 'mes'; // Por defecto muestra el mes en repor
+
     try {
-        const res = await fetch(`${API_URL}/api/reportes`);
+        const res = await fetch(`${API_URL}/api/reportes?filtro=${filtro}`);
         const data = await res.json();
         
         const ingresos = data.totales.ingresos_totales || 0;

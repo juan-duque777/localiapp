@@ -116,30 +116,33 @@ app.delete('/api/productos/:id', (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════════
-// ─── RUTAS DE PEDIDOS ───────────────────────────────────────────────
+// ─── RUTAS DE PEDIDOS (CON FILTRO DE TIEMPO) ────────────────────────
 // ════════════════════════════════════════════════════════════════════
 
-// 1. Obtener todos los pedidos (Para el admin) + LOS PRODUCTOS QUE PIDIÓ
 app.get('/api/pedidos', (req, res) => {
-    // Primero traemos los pedidos generales
-    const sqlPedidos = `SELECT * FROM pedidos ORDER BY fecha DESC`;
+    // Leemos qué filtro pide el admin, por defecto 'todos'
+    const filtro = req.query.filtro || 'todos';
+    let condicionFecha = '1=1'; // Significa "traer todo" por defecto
+
+    // Traducimos el filtro a comandos SQL
+    if (filtro === 'hoy') condicionFecha = 'DATE(fecha) = CURDATE()';
+    if (filtro === 'semana') condicionFecha = 'YEARWEEK(fecha, 1) = YEARWEEK(CURDATE(), 1)';
+    if (filtro === 'mes') condicionFecha = 'MONTH(fecha) = MONTH(CURDATE()) AND YEAR(fecha) = YEAR(CURDATE())';
+
+    const sqlPedidos = `SELECT * FROM pedidos WHERE ${condicionFecha} ORDER BY fecha DESC`;
     
     db.query(sqlPedidos, (err, pedidos) => {
         if (err) return res.status(500).json({ error: 'Error obteniendo pedidos' });
-        
-        if (pedidos.length === 0) return res.json([]); // Si no hay pedidos, devolvemos vacío
+        if (pedidos.length === 0) return res.json([]); 
 
-        // Si hay pedidos, traemos TODOS los detalles de comida de la BD
         const sqlDetalles = `SELECT * FROM detalle_pedidos`;
         db.query(sqlDetalles, (err2, detalles) => {
             if (err2) return res.status(500).json({ error: 'Error obteniendo detalles' });
 
-            // Le metemos a cada pedido su lista de hamburguesas/bebidas correspondiente
             const pedidosCompletos = pedidos.map(p => {
                 p.productos = detalles.filter(d => d.pedido_id === p.id);
                 return p;
             });
-
             res.json(pedidosCompletos);
         });
     });
@@ -190,26 +193,35 @@ app.get('/api/pedidos/:id', (req, res) => {
 // ════════════════════════════════════════════════════════════════════
 
 app.get('/api/reportes', (req, res) => {
-    // 1. Calculamos la plata total y cuántos pedidos se han entregado
+    const filtro = req.query.filtro || 'todos';
+    
+    // Condición para la tabla pedidos normal
+    let condicionFecha = '1=1'; 
+    if (filtro === 'hoy') condicionFecha = 'DATE(fecha) = CURDATE()';
+    if (filtro === 'semana') condicionFecha = 'YEARWEEK(fecha, 1) = YEARWEEK(CURDATE(), 1)';
+    if (filtro === 'mes') condicionFecha = 'MONTH(fecha) = MONTH(CURDATE()) AND YEAR(fecha) = YEAR(CURDATE())';
+
     const sqlTotales = `
         SELECT 
             COUNT(id) as total_pedidos, 
             SUM(total) as ingresos_totales 
         FROM pedidos 
-        WHERE estado = 'Entregado'
+        WHERE estado = 'Entregado' AND ${condicionFecha}
     `;
     
     db.query(sqlTotales, (err, resultTotales) => {
         if (err) return res.status(500).json({ error: 'Error calculando totales' });
 
-        // 2. Calculamos cuáles son los 5 productos que más se venden
+        // Adaptamos la condición para la tabla unida (con el alias "p.")
+        let condicionFechaAlias = condicionFecha.replace(/fecha/g, 'p.fecha');
+
         const sqlTop = `
             SELECT 
                 dp.nombre_producto, 
                 SUM(dp.cantidad) as total_vendido 
             FROM detalle_pedidos dp 
             JOIN pedidos p ON dp.pedido_id = p.id 
-            WHERE p.estado = 'Entregado' 
+            WHERE p.estado = 'Entregado' AND ${condicionFechaAlias}
             GROUP BY dp.nombre_producto 
             ORDER BY total_vendido DESC 
             LIMIT 5
@@ -218,7 +230,6 @@ app.get('/api/reportes', (req, res) => {
         db.query(sqlTop, (err2, resultTop) => {
             if (err2) return res.status(500).json({ error: 'Error calculando top de productos' });
             
-            // Mandamos el paquete completo al frontend
             res.json({
                 totales: resultTotales[0],
                 topProductos: resultTop
