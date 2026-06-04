@@ -91,18 +91,30 @@
                             </button>
                         </div>
 
-                        <div id="view-logged" style="display: none;">
-                            <div class="user-profile-header">
-                                <div class="user-avatar">J</div>
+                        <div id="view-logged" style="display: none; padding: 10px;">
+                            <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px; border-bottom: 1px dashed #eee; padding-bottom: 15px;">
+                                <div style="background: var(--teal); color: white; width: 45px; height: 45px; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.5rem; font-weight: 800;">J</div>
                                 <div>
-                                    <p class="user-name">Juan Pérez</p>
-                                    <p class="user-email">juan@gmail.com</p>
+                                    <h4 style="margin: 0; color: var(--warm-1); font-size: 1.1rem; font-weight: 800;">Juan Duque</h4>
+                                    <p style="margin: 0; color: #888; font-size: 0.85rem;">juan@gmail.com</p>
                                 </div>
                             </div>
-                            <ul class="user-links">
-                                <li><a href="#"><i class="fa-solid fa-clock-rotate-left"></i> Mis Pedidos</a></li>
-                                <li><a href="admin.html" class="admin-link"><i class="fa-solid fa-screwdriver-wrench"></i> Panel Administrador</a></li>
-                                <li><a href="#" id="btn-logout-header" style="color: var(--coral);"><i class="fa-solid fa-arrow-right-from-bracket"></i> Cerrar Sesión</a></li>
+                            <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 15px;">
+                                <li>
+                                    <a href="#" id="btn-mis-pedidos" style="display: flex; align-items: center; gap: 10px; color: var(--warm-1); text-decoration: none; font-weight: 700; font-size: 1rem;">
+                                        <i class="fa-solid fa-clock-rotate-left"></i> Mis Pedidos
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="admin.html" style="display: flex; align-items: center; gap: 10px; background: #F4F6F8; color: var(--warm-1); text-decoration: none; font-weight: 700; font-size: 1rem; padding: 12px; border-radius: 8px; border: 1px dashed #ccc;">
+                                        <i class="fa-solid fa-screwdriver-wrench"></i> Panel Administrador
+                                    </a>
+                                </li>
+                                <li style="margin-top: 5px;">
+                                    <a href="#" id="btn-logout-header" style="display: flex; align-items: center; gap: 10px; color: var(--coral); text-decoration: none; font-weight: 700; font-size: 1rem;">
+                                        <i class="fa-solid fa-arrow-right-from-bracket"></i> Cerrar Sesión
+                                    </a>
+                                </li>
                             </ul>
                         </div>
 
@@ -274,6 +286,19 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Mis Pedidos -->
+    <div class="modal-overlay" id="mis-pedidos-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Mis Pedidos 🕒</h2>
+                <button class="close-btn" id="close-mis-pedidos"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" id="mis-pedidos-container" style="padding: 15px 0; max-height: 60vh; overflow-y: auto;">
+                <!-- Aquí se inyectarán las tarjetas de los pedidos -->
             </div>
         </div>
     </div>

@@ -596,5 +596,92 @@ setInterval(async () => {
     } catch(e) { console.log('Buscando actualizaciones...'); }
 }, 5000);
 
+// ══════════════════════════════════════════════════════════════════════
+// ─── LÓGICA DE "MIS PEDIDOS" ──────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════
+const misPedidosModal = $('mis-pedidos-modal');
+const closeMisPedidosBtn = $('close-mis-pedidos');
+const btnMisPedidos = $('btn-mis-pedidos');
+const misPedidosContainer = $('mis-pedidos-container');
+
+if(btnMisPedidos) {
+    btnMisPedidos.addEventListener('click', (e) => {
+        e.preventDefault();
+        closeAllDropdowns(); // Escondemos el menú flotante
+        abrirMisPedidos();
+    });
+}
+
+if(closeMisPedidosBtn) {
+    closeMisPedidosBtn.addEventListener('click', () => {
+        misPedidosModal.classList.remove('active');
+        document.body.style.overflow = '';
+    });
+}
+
+// Cerrar tocando afuera
+if(misPedidosModal) {
+    misPedidosModal.addEventListener('click', e => {
+        if (e.target === misPedidosModal) {
+            misPedidosModal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+    });
+}
+
+async function abrirMisPedidos() {
+    misPedidosModal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    
+    if(misPedidosContainer) {
+        misPedidosContainer.innerHTML = '<div style="text-align:center; padding: 20px;"><i class="fa-solid fa-spinner fa-spin" style="font-size: 2rem; color: var(--teal);"></i></div>';
+    }
+    
+    try {
+        // En tu app los pedidos se guardan actualmente bajo "Usuario de Google"
+        const res = await fetch(`${API_URL}/api/mis-pedidos/Usuario de Google`);
+        const pedidos = await res.json();
+        
+        misPedidosContainer.innerHTML = '';
+        
+        if(pedidos.length === 0) {
+            misPedidosContainer.innerHTML = `
+                <div style="text-align: center; padding: 30px 10px; color: var(--warm-3);">
+                    <i class="fa-solid fa-receipt" style="font-size: 3rem; margin-bottom: 15px; color: #eee;"></i>
+                    <p>Aún no has hecho ningún pedido.</p>
+                </div>`;
+            return;
+        }
+        
+        pedidos.forEach(p => {
+            let badgeClass = 'status-pendiente';
+            let iconClass = 'fa-clock';
+            
+            if(p.estado === 'Preparando') { badgeClass = 'status-preparando'; iconClass = 'fa-fire-burner'; }
+            if(p.estado === 'Entregado') { badgeClass = 'status-entregado'; iconClass = 'fa-check-double'; }
+            
+            let detalleTexto = p.productos ? p.productos.map(prod => `<strong>${prod.cantidad}x</strong> ${prod.nombre_producto}`).join(', ') : 'Varios productos...';
+            
+            const card = document.createElement('div');
+            card.style.cssText = 'background: white; border: 1px solid #eee; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);';
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px dashed #eee; padding-bottom: 10px;">
+                    <span style="font-weight: 800; color: var(--warm-1); font-size: 1.1rem;">Ticket #${p.id}</span>
+                    <span class="status-badge ${badgeClass}" style="font-size: 0.75rem;"><i class="fa-solid ${iconClass}"></i> ${p.estado || 'Pendiente'}</span>
+                </div>
+                <div style="font-size: 0.85rem; color: var(--warm-2); margin-bottom: 12px; line-height: 1.5;">
+                    <p style="margin: 0 0 5px 0;"><i class="fa-regular fa-calendar"></i> ${p.hora_entrega} • ${p.tipo_pedido === 'Domicilio' ? '🛵 Domicilio' : '🍽️ Mesa'}</p>
+                    <p style="margin: 0; color: var(--teal);">${detalleTexto}</p>
+                </div>
+                <div style="font-weight: 900; font-size: 1.2rem; color: var(--warm-1); text-align: left;">
+                    ${fmt(p.total)}
+                </div>
+            `;
+            misPedidosContainer.appendChild(card);
+        });
+    } catch(e) {
+        misPedidosContainer.innerHTML = '<p style="text-align:center; color: var(--coral); padding: 20px;">No se pudieron cargar los pedidos.</p>';
+    }
+}
 // ─── Iniciar Aplicación ───────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', cargarProductosDesdeBD);

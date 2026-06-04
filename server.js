@@ -152,6 +152,33 @@ app.delete('/api/mesas/:id', (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════════
+// ─── RUTAS DE MIS PEDIDOS (CLIENTE) ─────────────────────────────────
+// ════════════════════════════════════════════════════════════════════
+app.get('/api/mis-pedidos/:cliente', (req, res) => {
+    const cliente = req.params.cliente;
+    // Traemos los últimos 10 pedidos del cliente
+    const sql = 'SELECT * FROM pedidos WHERE cliente = ? ORDER BY id DESC LIMIT 10';
+    
+    db.query(sql, [cliente], (err, results) => {
+        if (err) return res.status(500).json({ error: 'Error obteniendo pedidos' });
+        if (results.length === 0) return res.json([]);
+        
+        const pedidosIds = results.map(p => p.id);
+        const sqlDetalle = 'SELECT * FROM detalle_pedidos WHERE pedido_id IN (?)';
+        
+        db.query(sqlDetalle, [pedidosIds], (err2, detalles) => {
+            if (err2) return res.json(results); // Devuelve sin detalles si hay error
+            
+            const pedidosConDetalle = results.map(p => {
+                p.productos = detalles.filter(d => d.pedido_id === p.id);
+                return p;
+            });
+            res.json(pedidosConDetalle);
+        });
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════
 // ─── RUTAS DE PEDIDOS (CON FILTRO DE TIEMPO) ────────────────────────
 // ════════════════════════════════════════════════════════════════════
 
