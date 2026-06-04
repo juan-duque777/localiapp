@@ -1,3 +1,6 @@
+// ─── MAGIA: Autodetecta el entorno (Local o Render) ───────────────────
+const API_URL = window.location.hostname.includes('onrender.com') ? '' : 'http://localhost:3000';
+
 // ─── Variables Globales ───────────────────────────────────────────────
 let baseDeDatosLocal = [];
 const cart = {}; // { productId: { product, qty } }
@@ -16,17 +19,16 @@ function totalPrice() {
     return Object.values(cart).reduce((s, i) => s + i.product.price * i.qty, 0);
 }
 
-// ─── Conexión al Backend (Clever Cloud) ──────────────────────────────
+// ─── Conexión al Backend ─────────────────────────────────────────────
 async function cargarProductosDesdeBD() {
     try {
-        const respuesta = await fetch('/api/productos');
+        const respuesta = await fetch(`${API_URL}/api/productos`);
         if (!respuesta.ok) throw new Error('Error en el servidor');
 
         const productosMySQL = await respuesta.json();
 
         // Convertimos los datos de la BD al formato que pide tu diseño
         baseDeDatosLocal = productosMySQL.map(prod => {
-            // Asignamos un emoji automático según la categoría
             let icono = '📦';
             if(prod.categoria === 'comidas') icono = '🍔';
             if(prod.categoria === 'bebidas') icono = '🥤';
@@ -41,7 +43,7 @@ async function cargarProductosDesdeBD() {
                 price: parseFloat(prod.precio),
                 cat: prod.categoria || 'todos',
                 emoji: icono,
-                imagen_url: prod.imagen_url // <-- Agregamos esta línea
+                imagen_url: prod.imagen_url 
             };
         });
 
@@ -50,8 +52,11 @@ async function cargarProductosDesdeBD() {
 
     } catch (error) {
         console.error('Error cargando menú:', error);
-        $('contenedor-productos').innerHTML = 
-            '<div style="text-align:center; padding:2rem; color:var(--text-light);"><p>No se pudo conectar con el local.</p></div>';
+        const container = $('contenedor-productos');
+        if(container) {
+            container.innerHTML = 
+                '<div style="text-align:center; padding:2rem; color:var(--warm-3);"><p>No se pudo conectar con el local.</p></div>';
+        }
     }
 }
 
@@ -64,10 +69,12 @@ function updateCart() {
     $('cart-total').textContent  = fmt(total);
 
     const fc = $('floating-cart');
-    if (count > 0) {
-        fc.classList.add('visible');
-    } else {
-        fc.classList.remove('visible');
+    if(fc) {
+        if (count > 0) {
+            fc.classList.add('visible');
+        } else {
+            fc.classList.remove('visible');
+        }
     }
 }
 
@@ -112,11 +119,20 @@ function setTipoPedido(tipo) {
         btnMesa.className = 'btn btn-outline';
         document.getElementById('campos-domicilio').style.display = 'block';
         document.getElementById('campos-mesa').style.display = 'none';
+        
+        // Hacer requerida la dirección
+        document.getElementById('client-address').setAttribute('required', 'true');
+        document.getElementById('select-mesa').removeAttribute('required');
     } else {
         btnDom.className = 'btn btn-outline';
         btnMesa.className = 'btn btn-primary';
         document.getElementById('campos-domicilio').style.display = 'none';
         document.getElementById('campos-mesa').style.display = 'block';
+        
+        // Hacer requerida la mesa
+        document.getElementById('client-address').removeAttribute('required');
+        document.getElementById('select-mesa').setAttribute('required', 'true');
+        
         cargarMesasCliente(); 
     }
 }
@@ -157,9 +173,8 @@ function buildCard(product) {
     card.dataset.cat = product.cat;
     card.dataset.name = product.name.toLowerCase();
 
-    // Verificamos si existe la foto guardada en el backend
-        const medioVisual = product.imagen_url 
-        ? `<img src="${product.imagen_url}" alt="${product.name}" style="width:100%; height:100%; object-fit:cover;">`
+    const medioVisual = product.imagen_url 
+        ? `<img src="${API_URL}${product.imagen_url}" alt="${product.name}" style="width:100%; height:100%; object-fit:cover;">`
         : `<div class="product-img-placeholder">${product.emoji}</div>`;
 
     card.innerHTML = `
@@ -203,7 +218,7 @@ function renderProducts(filter = 'todos', query = '') {
     if (!filtered.length) {
         container.innerHTML = `
             <div class="empty-state">
-                <i class="fa-regular fa-face-sad-tear" style="font-size: 2rem; color: var(--text-light);"></i>
+                <i class="fa-regular fa-face-sad-tear" style="font-size: 2rem; color: var(--warm-3);"></i>
                 <p style="margin-top: 10px;">No encontramos productos aquí</p>
             </div>`;
         return;
@@ -211,7 +226,6 @@ function renderProducts(filter = 'todos', query = '') {
 
     filtered.forEach(p => {
         container.appendChild(buildCard(p));
-        // Si ya hay items en el carrito, restaurar los botones de cantidad
         if (cart[p.id]) renderPriceRow(p.id);
     });
 }
@@ -234,7 +248,7 @@ document.querySelectorAll('.cat-btn').forEach(btn => {
         renderProducts(currentCat, currentQuery);
     });
 });
-// Activar el primer filtro al cargar
+
 const searchInput = $('search-input');
 if(searchInput) {
     searchInput.addEventListener('input', e => {
@@ -247,7 +261,6 @@ if(searchInput) {
 // ─── LÓGICA DEL MODAL DE CHECKOUT Y FORMULARIO ────────────────────────
 // ══════════════════════════════════════════════════════════════════════
 
-// 1. Variables del Modal y Nuevas Funciones
 const checkoutModal = $('checkout-modal');
 const closeModalBtn = $('close-modal');
 const checkoutItemsContainer = $('checkout-items');
@@ -261,7 +274,6 @@ const clientAddressInput = $('client-address');
 const orderTimeType = $('order-time-type');
 const customTimeInput = $('custom-time');
 
-// 2. Abrir el Modal y renderizar la factura
 function openCheckoutModal() {
     if (!checkoutItemsContainer) return;
     checkoutItemsContainer.innerHTML = ''; 
@@ -284,11 +296,10 @@ function openCheckoutModal() {
     document.body.style.overflow = 'hidden'; 
 }
 
-// 3. Cerrar el Modal
 function closeCheckoutModal() {
     checkoutModal.classList.remove('active');
     document.body.style.overflow = '';
-    checkoutForm.reset();
+    if(checkoutForm) checkoutForm.reset();
 }
 
 if(closeModalBtn) closeModalBtn.addEventListener('click', closeCheckoutModal);
@@ -296,7 +307,6 @@ if(checkoutModal) checkoutModal.addEventListener('click', e => {
     if (e.target === checkoutModal) closeCheckoutModal(); 
 });
 
-// 4. Conectar el carrito flotante para que abra el modal
 const floatingCart = $('floating-cart');
 if(floatingCart) {
     floatingCart.addEventListener('click', openCheckoutModal);
@@ -305,7 +315,6 @@ if(floatingCart) {
     });
 }
 
-// 5. Simulación de Login con Google (Oculta login, muestra formulario)
 if(googleLoginBtn) {
     googleLoginBtn.addEventListener('click', () => {
         googleLoginBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Conectando...';
@@ -316,7 +325,6 @@ if(googleLoginBtn) {
     });
 }
 
-// 6. Lógica del Botón GPS
 if(getLocationBtn) {
     getLocationBtn.addEventListener('click', () => {
         if ("geolocation" in navigator) {
@@ -339,7 +347,6 @@ if(getLocationBtn) {
     });
 }
 
-// 7. Mostrar el reloj solo si elige "Elegir hora exacta"
 if(orderTimeType) {
     orderTimeType.addEventListener('change', (e) => {
         if(e.target.value === 'Elegir hora') {
@@ -352,7 +359,6 @@ if(orderTimeType) {
     });
 }
 
-// 9. ENVIAR EL PEDIDO A LA BASE DE DATOS
 if(checkoutForm) {
     checkoutForm.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -360,8 +366,8 @@ if(checkoutForm) {
         let horaFinal = orderTimeType.value;
         if(horaFinal === 'Elegir hora') {
             horaFinal = customTimeInput.value;
+        }
 
-            // NUEVO: Verificamos tipo y validamos la mesa
         const tipoPedido = document.getElementById('tipo_pedido_val').value;
         const numeroMesa = tipoPedido === 'En mesa' ? document.getElementById('select-mesa').value : null;
 
@@ -372,13 +378,13 @@ if(checkoutForm) {
 
         const pedidoFinal = {
             cliente: "Usuario de Google", 
-            direccion: clientAddressInput.value,
+            direccion: tipoPedido === 'Domicilio' ? clientAddressInput.value : 'Consumo en el local',
             hora_entrega: horaFinal,
             metodo_pago: $('payment-method').value,
             notas: $('order-notes').value,
             total: totalPrice(),
-            tipo_pedido: tipoPedido, // NUEVO
-            mesa: numeroMesa, // NUEVO
+            tipo_pedido: tipoPedido,
+            mesa: numeroMesa,
             productos: Object.values(cart).map(item => ({
                 id: item.product.id,
                 nombre: item.product.name,
@@ -387,34 +393,27 @@ if(checkoutForm) {
             }))
         };
 
-        // Cambiamos el texto del botón mientras carga
         const btnSubmit = document.querySelector('.submit-order-btn');
         const textoOriginal = btnSubmit.innerHTML;
         btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...';
         btnSubmit.disabled = true;
 
-        // Mandamos el paquete por el tubo (Fetch) a nuestra nueva ruta
-// Mandamos el paquete por el tubo (Fetch) a nuestra nueva ruta
-        fetch('/api/pedidos', {
+        fetch(`${API_URL}/api/pedidos`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(pedidoFinal)
         })
         .then(response => response.json())
         .then(data => {
-            // 1. PRIMERO cerramos el modal para limpiar la pantalla
             closeCheckoutModal();
 
-            // 1.5. GUARDAMOS EL TICKET EN EL CELULAR PARA EL RADAR DE NOTIFICACIONES 
             localStorage.setItem('localiapp_ticket', data.pedido_id);
             localStorage.setItem('localiapp_estado', 'Pendiente');
             
-            // 2. Vaciamos el carrito de una vez para evitar re-envíos
             for (let prop in cart) delete cart[prop];
             updateCart();
             renderProducts(currentCat, currentQuery);
 
-            // 3. AHORA mostramos el éxito sobre la pantalla limpia
             Swal.fire({
                 title: '¡Pedido Confirmado!',
                 html: `
@@ -423,34 +422,28 @@ if(checkoutForm) {
                         <div style="background: #E4F5F7; border: 1px solid rgba(61,158,171,0.2); padding: 10px; border-radius: 10px; margin-bottom: 15px; display: inline-block;">
                             <span style="color: #2d8a96; font-weight: 800; font-size: 1.1rem;">Ticket de orden: #${data.pedido_id}</span>
                         </div>
-                        <p style="font-size: 0.85rem; color: #6B5E57;">El negocio ya está revisando tu pedido y pronto comenzará a prepararlo según tus indicaciones. ¡Gracias por usar Localiapp!</p>
+                        <p style="font-size: 0.85rem; color: #6B5E57;">El negocio ya está revisando tu pedido y pronto comenzará a prepararlo. ¡Gracias por usar Localiapp!</p>
                     </div>
                 `,
                 icon: 'success',
-                confirmButtonColor: '#3D9EAB', // Cambiado a Teal para verse más corporativo
+                confirmButtonColor: '#3D9EAB',
                 confirmButtonText: 'Entendido',
                 background: '#FFF9F2',
-                color: '#2A1F1A',
-                width: '400px', // Un poco más ancho para que el texto respire
-                customClass: {
-                    popup: 'swal-premium-popup'
-                }
+                color: '#2A1F1A'
             });
         })
         .catch(error => {
             console.error('Error de conexión:', error);
-            // SweetAlert para el error también
             Swal.fire({
                 title: 'Uy, algo falló',
                 text: 'Hubo un problema de conexión al enviar tu pedido. Intenta de nuevo.',
                 icon: 'error',
-                confirmButtonColor: '#3D9EAB', // Tu color teal
+                confirmButtonColor: '#3D9EAB',
                 background: '#FFF9F2',
                 color: '#2A1F1A'
             });
         })
         .finally(() => {
-            // Restauramos el botón original
             btnSubmit.innerHTML = textoOriginal;
             btnSubmit.disabled = false;
         });
@@ -466,23 +459,20 @@ const notifDropdown = $('notif-dropdown');
 const userBtn = $('user-btn');
 const userDropdown = $('user-dropdown');
 
-// Función para cerrar todos los dropdowns (y que no se amontonen abiertos)
 function closeAllDropdowns() {
     if(notifDropdown) notifDropdown.classList.remove('active');
     if(userDropdown) userDropdown.classList.remove('active');
 }
 
-// Abrir/Cerrar Notificaciones
 if(bellBtn) {
     bellBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); // Evita que el clic cierre inmediatamente el cuadro
+        e.stopPropagation();
         const isActive = notifDropdown.classList.contains('active');
         closeAllDropdowns();
         if(!isActive) notifDropdown.classList.add('active');
     });
 }
 
-// Abrir/Cerrar Usuario
 if(userBtn) {
     userBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -492,7 +482,6 @@ if(userBtn) {
     });
 }
 
-// Cerrar si el cliente hace clic en cualquier parte vacía de la página
 document.addEventListener('click', (e) => {
     if (notifDropdown && !notifDropdown.contains(e.target)) {
         notifDropdown.classList.remove('active');
@@ -502,7 +491,6 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ─── SIMULACIÓN DE INICIO DE SESIÓN EN EL HEADER ─────────────────────
 const btnLoginHeader = $('btn-login-header');
 const btnLogoutHeader = $('btn-logout-header');
 const viewUnlogged = $('view-unlogged');
@@ -510,19 +498,16 @@ const viewLogged = $('view-logged');
 
 if(btnLoginHeader) {
     btnLoginHeader.addEventListener('click', () => {
-        // Animación temporal para simular que carga Google
         btnLoginHeader.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Conectando...';
         
         setTimeout(() => {
-            // Cambiamos a la vista donde se ve el correo y el link de Admin
             viewUnlogged.style.display = 'none';
             viewLogged.style.display = 'block';
             btnLoginHeader.innerHTML = '<img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" style="width: 16px;"> Continuar con Google';
             
-            // Un SweetAlert de bienvenida súper elegante
             Swal.fire({
                 title: '¡Sesión Iniciada!',
-                text: 'Bienvenido de nuevo, Juan.',
+                text: 'Bienvenido de nuevo.',
                 icon: 'success',
                 confirmButtonColor: '#3D9EAB',
                 timer: 2000,
@@ -537,7 +522,6 @@ if(btnLoginHeader) {
 if(btnLogoutHeader) {
     btnLogoutHeader.addEventListener('click', (e) => {
         e.preventDefault();
-        // Devolvemos el menú a su estado original (botón de Google)
         viewLogged.style.display = 'none';
         viewUnlogged.style.display = 'block';
         userDropdown.classList.remove('active');
@@ -552,12 +536,10 @@ let notificacionesNoLeidas = 0;
 function agregarNotificacion(titulo, mensaje, colorClass, icono) {
     if(!dropdownList) return;
     
-    // Sumamos al circulito rojo
     notificacionesNoLeidas++;
     badge.textContent = notificacionesNoLeidas;
     badge.style.display = 'flex';
 
-    // Creamos la nueva notificación arriba de la lista
     const li = document.createElement('li');
     li.innerHTML = `
         <div class="icon-circle ${colorClass}"><i class="${icono}"></i></div>
@@ -566,9 +548,8 @@ function agregarNotificacion(titulo, mensaje, colorClass, icono) {
             <p class="notif-desc">${mensaje}</p>
         </div>
     `;
-    dropdownList.prepend(li); // Lo pone de primero
+    dropdownList.prepend(li); 
 
-    // Toast flotante para que el usuario lo vea de una
     Swal.fire({
         toast: true, position: 'top-end', icon: 'success',
         title: titulo, text: mensaje,
@@ -576,7 +557,6 @@ function agregarNotificacion(titulo, mensaje, colorClass, icono) {
     });
 }
 
-// Al abrir el menú de notificaciones, borramos el número rojo
 if(bellBtn) {
     bellBtn.addEventListener('click', () => {
         notificacionesNoLeidas = 0;
@@ -584,21 +564,19 @@ if(bellBtn) {
     });
 }
 
-// Radar automático: Vigilar mi pedido cada 5 segundos
 setInterval(async () => {
     const miTicket = localStorage.getItem('localiapp_ticket');
     const miEstadoViejo = localStorage.getItem('localiapp_estado');
     
-    if(!miTicket) return; // Si no ha comprado nada, no hace nada
+    if(!miTicket) return; 
 
     try {
-        const res = await fetch(`/api/pedidos/${miTicket}`);
+        const res = await fetch(`${API_URL}/api/pedidos/${miTicket}`);
         if (!res.ok) return;
         const data = await res.json();
         
-        // Si el estado en la base de datos es diferente al que tenía guardado...
         if(data.estado && data.estado !== miEstadoViejo) {
-            localStorage.setItem('localiapp_estado', data.estado); // Actualizo la memoria
+            localStorage.setItem('localiapp_estado', data.estado); 
             
             if(data.estado === 'Preparando') {
                 agregarNotificacion(
@@ -612,7 +590,6 @@ setInterval(async () => {
                     'El domiciliario ya salió con el Ticket #' + miTicket, 
                     'bg-teal', 'fa-solid fa-motorcycle'
                 );
-                // Como ya se entregó, borramos el ticket de la memoria para que deje de vigilar
                 localStorage.removeItem('localiapp_ticket');
             }
         }
