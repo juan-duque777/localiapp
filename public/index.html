@@ -119,57 +119,65 @@
 
     </header>
 
-    <!-- ══════════════════════════════════════ -->
-    <!--  BANNER PEDIDO ANTICIPADO              -->
-    <!-- ══════════════════════════════════════ -->
-    <div class="promo-banner">
-        <span class="promo-icon">⏰</span>
-        <div class="promo-text">
-            <strong>¡Pide con anticipación!</strong>
-            <span>Elige tu hora y evita las filas</span>
-        </div>
-        <span class="promo-pill">NUEVO</span>
-    </div>
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!--  PAGE BODY                                                     -->
+    <!--  Mobile/Tablet: columna normal centrada                        -->
+    <!--  Desktop 1100px+: sidebar-left fijo + products-section derecha -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <div class="page-body">
 
-    <!-- ══════════════════════════════════════ -->
-    <!--  CATEGORÍAS                            -->
-    <!-- ══════════════════════════════════════ -->
-    <section class="categories-section">
-        <p class="section-label">Explorar por categoría</p>
-        <nav class="categories" aria-label="Categorías de productos">
-            <button class="cat-btn active" data-cat="todos">
-                <span class="cat-em">🏪</span> Todos
-            </button>
-            <button class="cat-btn" data-cat="comidas">
-                <span class="cat-em">🍔</span> Comidas
-            </button>
-            <button class="cat-btn" data-cat="bebidas">
-                <span class="cat-em">🥤</span> Bebidas
-            </button>
-            <button class="cat-btn" data-cat="panaderia">
-                <span class="cat-em">🍞</span> Panadería
-            </button>
-            <button class="cat-btn" data-cat="aseo">
-                <span class="cat-em">🧴</span> Aseo
-            </button>
-            <button class="cat-btn" data-cat="hogar">
-                <span class="cat-em">🏠</span> Hogar
-            </button>
-        </nav>
-    </section>
+        <!-- SIDEBAR IZQUIERDO (desktop) / Top sections (mobile/tablet) -->
+        <div class="sidebar-left">
 
-    <!-- ══════════════════════════════════════ -->
-    <!--  LISTA DE PRODUCTOS                    -->
-    <!-- ══════════════════════════════════════ -->
-    <section class="products-section">
-        <div class="products-header">
-            <h2 class="products-title" id="section-title">Lo más pedido</h2>
-            <span class="products-count" id="product-count"></span>
-        </div>
+            <!-- Banner Pedido Anticipado -->
+            <div class="promo-banner">
+                <span class="promo-icon">⏰</span>
+                <div class="promo-text">
+                    <strong>¡Pide con anticipación!</strong>
+                    <span>Elige tu hora y evita las filas</span>
+                </div>
+                <span class="promo-pill">NUEVO</span>
+            </div>
 
-        <!-- JS inyecta los productos aquí -->
-        <main class="product-list" id="contenedor-productos" aria-label="Lista de productos"></main>
-    </section>
+            <!-- Categorías -->
+            <section class="categories-section">
+                <p class="section-label">Explorar por categoría</p>
+                <nav class="categories" aria-label="Categorías de productos">
+                    <button class="cat-btn active" data-cat="todos">
+                        <span class="cat-em">🏪</span> Todos
+                    </button>
+                    <button class="cat-btn" data-cat="comidas">
+                        <span class="cat-em">🍔</span> Comidas
+                    </button>
+                    <button class="cat-btn" data-cat="bebidas">
+                        <span class="cat-em">🥤</span> Bebidas
+                    </button>
+                    <button class="cat-btn" data-cat="panaderia">
+                        <span class="cat-em">🍞</span> Panadería
+                    </button>
+                    <button class="cat-btn" data-cat="aseo">
+                        <span class="cat-em">🧴</span> Aseo
+                    </button>
+                    <button class="cat-btn" data-cat="hogar">
+                        <span class="cat-em">🏠</span> Hogar
+                    </button>
+                </nav>
+            </section>
+
+        </div><!-- /sidebar-left -->
+
+        <!-- ÁREA PRINCIPAL DE PRODUCTOS -->
+        <section class="products-section">
+            <div class="products-header">
+                <h2 class="products-title" id="section-title">Lo más pedido</h2>
+                <span class="products-count" id="product-count"></span>
+            </div>
+
+            <!-- JS inyecta los productos aquí -->
+            <main class="product-list" id="contenedor-productos" aria-label="Lista de productos"></main>
+        </section>
+
+    </div><!-- /page-body -->
 
     <!-- ══════════════════════════════════════ -->
     <!--  CARRITO FLOTANTE                      -->
@@ -213,9 +221,16 @@
                     </div>
 
                     <div id="delivery-section" class="delivery-section" style="display: none;">
-                        <h3>Datos de entrega</h3>
+                        <h3>Datos de tu pedido</h3>
                         
-                        <div class="form-group">
+                        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                            <button type="button" id="btn-domicilio" class="btn btn-primary" style="flex: 1; padding: 12px; font-weight: 800;" onclick="setTipoPedido('Domicilio')">🛵 A Domicilio</button>
+                            <button type="button" id="btn-mesa" class="btn btn-outline" style="flex: 1; padding: 12px; font-weight: 800;" onclick="setTipoPedido('En mesa')">🍽️ En el Local</button>
+                        </div>
+                        
+                        <input type="hidden" id="tipo_pedido_val" value="Domicilio">
+                        
+                        <div id="campos-domicilio" class="form-group">
                             <label><i class="fa-solid fa-location-dot"></i> ¿Dónde te lo llevamos?</label>
                             <div class="location-input-wrapper">
                                 <input type="text" id="client-address" placeholder="Dirección, Casa o Barrio..." required autocomplete="off">
@@ -223,6 +238,13 @@
                                     <i class="fa-solid fa-crosshairs"></i>
                                 </button>
                             </div>
+                        </div>
+
+                        <div id="campos-mesa" class="form-group" style="display: none;">
+                            <label><i class="fa-solid fa-chair"></i> ¿En qué mesa estás?</label>
+                            <select id="select-mesa" style="width: 100%; padding: 14px 15px; border: 2px solid var(--cream-2); border-radius: 10px; font-family: var(--font); font-size: 1rem; background: var(--white); outline: none;">
+                                <option value="">Cargando mesas...</option>
+                            </select>
                         </div>
                         
                         <div class="form-group highlight-group">
@@ -267,4 +289,3 @@
     <script src="js/script.js"></script>
 </body>
 </html>
-

@@ -157,6 +157,7 @@
             <li><a id="tab-pedidos" class="active"><i class="fa-solid fa-bell-concierge"></i> Pedidos Activos</a></li>
             <li><a id="tab-productos"><i class="fa-solid fa-box-open"></i> Productos</a></li>
             <li><a id="tab-reportes"><i class="fa-solid fa-chart-line"></i> Reportes</a></li>
+            <li><a id="tab-mesas"><i class="fa-solid fa-chair"></i> Mesas</a></li>
         </ul>
 
         <div style="margin-top: auto; padding: 20px 0; border-top: 1px dashed #eee;">
@@ -243,6 +244,14 @@
                 </div>
             </div>
         </section>
+
+        <section id="view-mesas" class="admin-section">
+            <div class="section-header">
+                <h2>Gestión de Mesas</h2>
+                <button class="btn btn-primary btn-sm" onclick="crearMesa()"><i class="fa-solid fa-plus"></i> Nueva Mesa</button>
+            </div>
+            <div class="products-grid" id="mesas-container"></div>
+        </section>
         
     </main>
 
@@ -297,7 +306,8 @@ const fmt = n => '$' + Number(n).toLocaleString('es-CO');
 const tabs = {
     'tab-pedidos': 'view-pedidos',
     'tab-productos': 'view-productos',
-    'tab-reportes': 'view-reportes'
+    'tab-reportes': 'view-reportes',
+    'tab-mesas': 'view-mesas'
 };
 
 Object.keys(tabs).forEach(tabId => {
@@ -311,6 +321,7 @@ Object.keys(tabs).forEach(tabId => {
         if(tabId === 'tab-pedidos') cargarPedidos();
         if(tabId === 'tab-productos') cargarProductosAdmin();
         if(tabId === 'tab-reportes') cargarReportes();
+        if(tabId === 'tab-mesas') cargarMesasAdmin();
         
         sidebar.classList.remove('active');
         overlay.classList.remove('active');
@@ -383,26 +394,48 @@ async function cargarPedidos() {
                 btnAction = `<button class="btn btn-outline" disabled><i class="fa-solid fa-check"></i> Finalizado</button>`;
             }
 
-            // ─── DETECTOR DE GOOGLE MAPS CORREGIDO ───
-            let direccionLimpia = p.direccion;
-            let btnGoogleMaps = '';
+            // ─── DETECTOR DE TIPO DE PEDIDO (MESA VS DOMICILIO) ───
+            let tipoEntregaHTML = '';
             
-            if (p.direccion && p.direccion.includes('Ubicación GPS')) {
-                const match = p.direccion.match(/\(([^)]+)\)/);
-                if (match) {
-                    const coordenadas = match[1].replace(' ', '');
-                    direccionLimpia = '📍 Ubicación enviada por GPS';
-                    // Link oficial y corregido de Google Maps
-                    btnGoogleMaps = `
-                        <div style="margin-top: 8px;">
-                            <a href="https://www.google.com/maps?q=${coordenadas}" target="_blank" 
-                               style="display: inline-flex; align-items: center; gap: 6px; background: var(--teal-light); color: var(--teal-dark); 
-                               text-decoration: none; font-weight: 800; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; border: 1px solid #A8E0E8; transition: 0.2s;">
-                               <i class="fa-solid fa-map-location-dot"></i> Abrir en Maps
-                            </a>
+            if (p.tipo_pedido === 'En mesa') {
+                tipoEntregaHTML = `
+                    <div style="display: flex; align-items: flex-start; gap: 12px; background: #FFF3E8; padding: 10px; border-radius: 8px; border: 1px dashed var(--coral);">
+                        <i class="fa-solid fa-utensils" style="color: var(--coral); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
+                        <div style="flex: 1; color: var(--coral); font-size: 1rem; line-height: 1.4; font-weight: 800;">
+                            Consumo en el Local: Mesa ${p.mesa}
                         </div>
-                    `;
+                    </div>
+                `;
+            } else {
+                let direccionLimpia = p.direccion;
+                let btnGoogleMaps = '';
+                
+                if (p.direccion && p.direccion.includes('Ubicación GPS')) {
+                    const match = p.direccion.match(/\(([^)]+)\)/);
+                    if (match) {
+                        const coordenadas = match[1].replace(' ', '');
+                        direccionLimpia = '📍 Ubicación enviada por GPS';
+                        btnGoogleMaps = `
+                            <div style="margin-top: 8px;">
+                                <a href="https://maps.google.com/?q=${coordenadas}" target="_blank" 
+                                   style="display: inline-flex; align-items: center; gap: 6px; background: var(--teal-light); color: var(--teal-dark); 
+                                   text-decoration: none; font-weight: 800; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; border: 1px solid #A8E0E8; transition: 0.2s;">
+                                   <i class="fa-solid fa-map-location-dot"></i> Abrir en Maps
+                                </a>
+                            </div>
+                        `;
+                    }
                 }
+
+                tipoEntregaHTML = `
+                    <div style="display: flex; align-items: flex-start; gap: 12px;">
+                        <i class="fa-solid fa-location-dot" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
+                        <div style="flex: 1; color: var(--warm-2); font-size: 0.9rem; line-height: 1.4;">
+                            ${direccionLimpia}
+                            ${btnGoogleMaps}
+                        </div>
+                    </div>
+                `;
             }
 
             // ─── LISTA DE PRODUCTOS DEL PEDIDO ───
@@ -435,13 +468,9 @@ async function cargarPedidos() {
                         <i class="fa-regular fa-user" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
                         <span style="font-weight: 800; color: var(--warm-1); font-size: 1rem;">${p.cliente}</span>
                     </div>
-                    <div style="display: flex; align-items: flex-start; gap: 12px;">
-                        <i class="fa-solid fa-location-dot" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
-                        <div style="flex: 1; color: var(--warm-2); font-size: 0.9rem; line-height: 1.4;">
-                            ${direccionLimpia}
-                            ${btnGoogleMaps}
-                        </div>
-                    </div>
+                    
+                    ${tipoEntregaHTML}
+                    
                     <div style="display: flex; align-items: flex-start; gap: 12px;">
                         <i class="fa-solid fa-money-bill-wave" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
                         <span style="color: var(--warm-2); font-size: 0.9rem;">Paga con: <strong style="color: var(--warm-1);">${p.metodo_pago}</strong></span>
@@ -591,7 +620,7 @@ document.getElementById('product-form').addEventListener('submit', async (e) => 
 // ─── LÓGICA DE REPORTES ───────────────────────────────────────────────
 async function cargarReportes() {
     const filtroElement = document.getElementById('filtro-tiempo-reportes');
-    const filtro = filtroElement ? filtroElement.value : 'mes'; // Por defecto muestra el mes en repor
+    const filtro = filtroElement ? filtroElement.value : 'mes';
 
     try {
         const res = await fetch(`${API_URL}/api/reportes?filtro=${filtro}`);
@@ -629,6 +658,62 @@ async function cargarReportes() {
     }
 }
 
+// ─── LÓGICA DE MESAS (ADMIN) ──────────────────────────────────────────
+async function cargarMesasAdmin() {
+    const container = document.getElementById('mesas-container');
+    try {
+        const res = await fetch(`${API_URL}/api/mesas?admin=true`);
+        const mesas = await res.json();
+        container.innerHTML = '';
+        
+        mesas.forEach(m => {
+            container.innerHTML += `
+                <div class="product-card" style="display: flex; justify-content: space-between; align-items: center; padding: 15px;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <div style="background: var(--teal-light); color: var(--teal); width: 45px; height: 45px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;"><i class="fa-solid fa-chair"></i></div>
+                        <h4 style="margin: 0; font-size: 1.1rem; color: var(--warm-1);">Mesa ${m.numero}</h4>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <label class="switch">
+                            <input type="checkbox" ${m.disponible ? 'checked' : ''} onchange="cambiarDisponibilidadMesa(${m.id}, this.checked)">
+                            <span class="slider"></span>
+                        </label>
+                        <button class="btn-delete" onclick="eliminarMesa(${m.id}, '${m.numero}')"><i class="fa-regular fa-trash-can"></i></button>
+                    </div>
+                </div>
+            `;
+        });
+    } catch(e) { container.innerHTML = '<p>Error cargando mesas</p>'; }
+}
+
+async function crearMesa() {
+    const { value: numero } = await Swal.fire({
+        title: 'Nueva Mesa', input: 'text', inputPlaceholder: 'Ej: 1, 2, Terraza, VIP...',
+        showCancelButton: true, confirmButtonColor: '#3D9EAB', cancelButtonText: 'Cancelar'
+    });
+    if (numero) {
+        await fetch(`${API_URL}/api/mesas`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ numero })
+        });
+        cargarMesasAdmin();
+    }
+}
+
+async function cambiarDisponibilidadMesa(id, checked) {
+    await fetch(`${API_URL}/api/mesas/${id}/disponibilidad`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disponible: checked ? 1 : 0 })
+    });
+}
+
+async function eliminarMesa(id, numero) {
+    if(confirm(`¿Eliminar la Mesa ${numero}?`)) {
+        await fetch(`${API_URL}/api/mesas/${id}`, { method: 'DELETE' });
+        cargarMesasAdmin();
+    }
+}
+
 // ─── LÓGICA DE CERRAR SESIÓN ────────────────────────────────────────
 document.getElementById('btn-logout').addEventListener('click', (e) => {
     e.preventDefault(); 
@@ -652,6 +737,6 @@ document.getElementById('btn-logout').addEventListener('click', (e) => {
 
 document.addEventListener('DOMContentLoaded', cargarPedidos);
 setInterval(cargarPedidos, 5000);
-    </script>
+</script>
 </body>
 </html>

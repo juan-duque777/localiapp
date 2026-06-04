@@ -88,6 +88,39 @@ function renderPriceRow(productId) {
            <button class="add-btn" onclick="addToCart(${productId})" aria-label="Agregar al carrito">+</button>`;
 }
 
+// --- LÓGICA DE MESAS ---
+async function cargarMesasCliente() {
+    const selectMesa = document.getElementById('select-mesa');
+    if(!selectMesa) return;
+    try {
+        const res = await fetch(`${API_URL}/api/mesas`);
+        const mesas = await res.json();
+        selectMesa.innerHTML = '<option value="" disabled selected>Selecciona tu mesa...</option>';
+        mesas.forEach(m => {
+            selectMesa.innerHTML += `<option value="${m.numero}">Mesa ${m.numero}</option>`;
+        });
+    } catch(e) { console.log('Error cargando mesas'); }
+}
+
+function setTipoPedido(tipo) {
+    document.getElementById('tipo_pedido_val').value = tipo;
+    const btnDom = document.getElementById('btn-domicilio');
+    const btnMesa = document.getElementById('btn-mesa');
+
+    if (tipo === 'Domicilio') {
+        btnDom.className = 'btn btn-primary';
+        btnMesa.className = 'btn btn-outline';
+        document.getElementById('campos-domicilio').style.display = 'block';
+        document.getElementById('campos-mesa').style.display = 'none';
+    } else {
+        btnDom.className = 'btn btn-outline';
+        btnMesa.className = 'btn btn-primary';
+        document.getElementById('campos-domicilio').style.display = 'none';
+        document.getElementById('campos-mesa').style.display = 'block';
+        cargarMesasCliente(); 
+    }
+}
+
 // ─── Agregar al carrito ──────────────────────────────────────────────
 function addToCart(productId) {
     const product = baseDeDatosLocal.find(p => p.id === productId);
@@ -327,6 +360,14 @@ if(checkoutForm) {
         let horaFinal = orderTimeType.value;
         if(horaFinal === 'Elegir hora') {
             horaFinal = customTimeInput.value;
+
+            // NUEVO: Verificamos tipo y validamos la mesa
+        const tipoPedido = document.getElementById('tipo_pedido_val').value;
+        const numeroMesa = tipoPedido === 'En mesa' ? document.getElementById('select-mesa').value : null;
+
+        if (tipoPedido === 'En mesa' && !numeroMesa) {
+            Swal.fire('Falta la mesa', 'Por favor selecciona en qué mesa estás.', 'warning');
+            return;
         }
 
         const pedidoFinal = {
@@ -336,6 +377,8 @@ if(checkoutForm) {
             metodo_pago: $('payment-method').value,
             notas: $('order-notes').value,
             total: totalPrice(),
+            tipo_pedido: tipoPedido, // NUEVO
+            mesa: numeroMesa, // NUEVO
             productos: Object.values(cart).map(item => ({
                 id: item.product.id,
                 nombre: item.product.name,

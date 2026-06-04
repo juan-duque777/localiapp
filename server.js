@@ -116,6 +116,42 @@ app.delete('/api/productos/:id', (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════════
+// ─── RUTAS DE MESAS ─────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════
+
+app.get('/api/mesas', (req, res) => {
+    const isAdmin = req.query.admin === 'true';
+    const sql = isAdmin ? 'SELECT * FROM mesas' : 'SELECT * FROM mesas WHERE disponible = 1';
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ error: 'Error obteniendo mesas' });
+        res.json(results);
+    });
+});
+
+app.post('/api/mesas', (req, res) => {
+    const { numero } = req.body;
+    db.query('INSERT INTO mesas (numero, disponible) VALUES (?, 1)', [numero], (err, result) => {
+        if (err) return res.status(500).json({ error: 'Error al crear mesa' });
+        res.json({ mensaje: 'Mesa creada exitosamente' });
+    });
+});
+
+app.put('/api/mesas/:id/disponibilidad', (req, res) => {
+    const { disponible } = req.body;
+    db.query('UPDATE mesas SET disponible = ? WHERE id = ?', [disponible, req.params.id], (err) => {
+        if (err) return res.status(500).json({ error: 'Error actualizando mesa' });
+        res.json({ mensaje: 'Disponibilidad actualizada' });
+    });
+});
+
+app.delete('/api/mesas/:id', (req, res) => {
+    db.query('DELETE FROM mesas WHERE id = ?', [req.params.id], (err) => {
+        if (err) return res.status(500).json({ error: 'Error eliminando mesa' });
+        res.json({ mensaje: 'Mesa eliminada' });
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════
 // ─── RUTAS DE PEDIDOS (CON FILTRO DE TIEMPO) ────────────────────────
 // ════════════════════════════════════════════════════════════════════
 
@@ -150,10 +186,11 @@ app.get('/api/pedidos', (req, res) => {
 
 // 2. Guardar un nuevo pedido (Viene desde el carrito del cliente)
 app.post('/api/pedidos', (req, res) => {
-    const { cliente, direccion, hora_entrega, metodo_pago, notas, total, productos } = req.body;
+    // NUEVO: Recibimos tipo_pedido y mesa
+    const { cliente, direccion, hora_entrega, metodo_pago, notas, total, productos, tipo_pedido, mesa } = req.body;
     
-    const sqlPedido = `INSERT INTO pedidos (cliente, direccion, hora_entrega, metodo_pago, notas, total) VALUES (?, ?, ?, ?, ?, ?)`;
-    db.query(sqlPedido, [cliente, direccion, hora_entrega, metodo_pago, notas, total], (err, result) => {
+    const sqlPedido = `INSERT INTO pedidos (cliente, direccion, hora_entrega, metodo_pago, notas, total, tipo_pedido, mesa) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+    db.query(sqlPedido, [cliente, direccion, hora_entrega, metodo_pago, notas, total, tipo_pedido, mesa], (err, result) => {
         if (err) return res.status(500).json({ error: 'Error al procesar el pedido principal' });
 
         const pedidoId = result.insertId; 
