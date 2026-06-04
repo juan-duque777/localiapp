@@ -268,364 +268,359 @@
     </div>
 
     <script>
+// MAGIA: Autodetecta si estás en tu PC o en la Nube (Render)
+const API_URL = window.location.hostname.includes('onrender.com') ? '' : 'http://localhost:3000';
+
 let ultimoPedidoId = 0;
-        const fmt = n => '$' + Number(n).toLocaleString('es-CO');
+const fmt = n => '$' + Number(n).toLocaleString('es-CO');
 
-        // Lógica de navegación entre pestañas
-        const tabs = {
-            'tab-pedidos': 'view-pedidos',
-            'tab-productos': 'view-productos',
-            'tab-reportes': 'view-reportes'
-        };
+// Lógica de navegación entre pestañas
+const tabs = {
+    'tab-pedidos': 'view-pedidos',
+    'tab-productos': 'view-productos',
+    'tab-reportes': 'view-reportes'
+};
 
-        Object.keys(tabs).forEach(tabId => {
-            document.getElementById(tabId).addEventListener('click', (e) => {
-                document.querySelectorAll('.nav-links a').forEach(a => a.classList.remove('active'));
-                document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
-                
-                e.currentTarget.classList.add('active');
-                document.getElementById(tabs[tabId]).classList.add('active');
-                
-                if(tabId === 'tab-pedidos') cargarPedidos();
-                if(tabId === 'tab-productos') cargarProductosAdmin();
-                if(tabId === 'tab-reportes') cargarReportes();
-                
-                sidebar.classList.remove('active');
-                overlay.classList.remove('active');
-            });
-        });
+Object.keys(tabs).forEach(tabId => {
+    document.getElementById(tabId).addEventListener('click', (e) => {
+        document.querySelectorAll('.nav-links a').forEach(a => a.classList.remove('active'));
+        document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+        
+        e.currentTarget.classList.add('active');
+        document.getElementById(tabs[tabId]).classList.add('active');
+        
+        if(tabId === 'tab-pedidos') cargarPedidos();
+        if(tabId === 'tab-productos') cargarProductosAdmin();
+        if(tabId === 'tab-reportes') cargarReportes();
+        
+        sidebar.classList.remove('active');
+        overlay.classList.remove('active');
+    });
+});
 
-        // Menú móvil
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('menu-overlay');
-        document.getElementById('open-menu').addEventListener('click', () => { sidebar.classList.add('active'); overlay.classList.add('active'); });
-        document.getElementById('close-menu').addEventListener('click', () => { sidebar.classList.remove('active'); overlay.classList.remove('active'); });
-        overlay.addEventListener('click', () => { sidebar.classList.remove('active'); overlay.classList.remove('active'); });
+// Menú móvil
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('menu-overlay');
+document.getElementById('open-menu').addEventListener('click', () => { sidebar.classList.add('active'); overlay.classList.add('active'); });
+document.getElementById('close-menu').addEventListener('click', () => { sidebar.classList.remove('active'); overlay.classList.remove('active'); });
+overlay.addEventListener('click', () => { sidebar.classList.remove('active'); overlay.classList.remove('active'); });
 
-        // Modal de Productos
-        const prodModal = document.getElementById('product-modal');
-        document.getElementById('btn-open-prod-modal').addEventListener('click', () => {
-            document.getElementById('product-form').reset();
-            document.getElementById('prod-id').value = ''; 
-            document.getElementById('modal-title').innerHTML = '<i class="fa-solid fa-pizza-slice"></i> Agregar Producto';
-            prodModal.classList.add('active');
-        });
-        document.getElementById('btn-close-prod-modal').addEventListener('click', () => prodModal.classList.remove('active'));
+// Modal de Productos
+const prodModal = document.getElementById('product-modal');
+document.getElementById('btn-open-prod-modal').addEventListener('click', () => {
+    document.getElementById('product-form').reset();
+    document.getElementById('prod-id').value = ''; 
+    document.getElementById('modal-title').innerHTML = '<i class="fa-solid fa-pizza-slice"></i> Agregar Producto';
+    prodModal.classList.add('active');
+});
+document.getElementById('btn-close-prod-modal').addEventListener('click', () => prodModal.classList.remove('active'));
 
-        // ─── LÓGICA DE PEDIDOS ───────────────────────────────────────────────
+// ─── LÓGICA DE PEDIDOS ───────────────────────────────────────────────
 async function cargarPedidos() {
-            const container = document.getElementById('orders-container');
-            try {
-                const res = await fetch(`/api/pedidos`);
-                const pedidos = await res.json();
-                
-                // --- LÓGICA DE NOTIFICACIÓN ADMIN ---
-                if (pedidos.length > 0) {
-                    // Buscamos el ID más alto (el pedido más reciente)
-                    const maxId = Math.max(...pedidos.map(p => p.id));
-                    
-                    // Si el ID nuevo es mayor al último que conocíamos, ¡entró un pedido!
-                    if (ultimoPedidoId !== 0 && maxId > ultimoPedidoId) {
-                        Swal.fire({
-                            toast: true, position: 'top-end', icon: 'info',
-                            title: `¡Nuevo Pedido Recibido! (Ticket #${maxId})`,
-                            showConfirmButton: false, timer: 5000,
-                            background: '#E4F5F7', color: '#2d8a96'
-                        });
-                    }
-                    ultimoPedidoId = maxId;
-                }
-                // --- FIN LÓGICA NOTIFICACIÓN ---
-
-                container.innerHTML = '';
-
-                if(pedidos.length === 0) {
-                    container.innerHTML = '<p style="text-align:center; padding: 20px; color:#aaa;">No hay pedidos activos.</p>';
-                    return;
-                }
-
-                pedidos.forEach(p => {
-                    let badgeClass = 'status-pendiente';
-                    let btnAction = '';
-
-                    if(p.estado === 'Pendiente' || !p.estado) {
-                        badgeClass = 'status-pendiente';
-                        btnAction = `<button class="btn btn-primary" style="width:100%" onclick="cambiarEstadoPedido(${p.id}, 'Preparando', this)"><i class="fa-solid fa-fire-burner"></i> Preparar</button>`;
-                    } else if(p.estado === 'Preparando') {
-                        badgeClass = 'status-preparando';
-                        btnAction = `<button class="btn btn-outline" onclick="cambiarEstadoPedido(${p.id}, 'Entregado', this)"><i class="fa-solid fa-motorcycle"></i> Despachar</button>`;
-                    } else {
-                        badgeClass = 'status-entregado';
-                        btnAction = `<button class="btn btn-outline" disabled><i class="fa-solid fa-check"></i> Finalizado</button>`;
-                    }
-
-                    // ─── MAGIA VISUAL: DETECTOR DE GOOGLE MAPS Y LIMPIEZA ───
-                    let direccionLimpia = p.direccion;
-                    let btnGoogleMaps = '';
-                    
-                    if (p.direccion && p.direccion.includes('Ubicación GPS')) {
-                        const match = p.direccion.match(/\(([^)]+)\)/);
-                        if (match) {
-                            const coordenadas = match[1].replace(' ', '');
-                            // Quitamos los números feos de la vista
-                            direccionLimpia = '📍 Ubicación enviada por GPS';
-                            // Creamos el botón con un diseño más limpio, margen y enlace oficial
-                            btnGoogleMaps = `
-                                <div style="margin-top: 8px;">
-                                    <a href="https://www.google.com/maps/search/?api=1&query=${coordenadas}" target="_blank" 
-                                       style="display: inline-flex; align-items: center; gap: 6px; background: var(--teal-light); color: var(--teal-dark); 
-                                       text-decoration: none; font-weight: 800; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; border: 1px solid #A8E0E8; transition: 0.2s;">
-                                       <i class="fa-solid fa-map-location-dot"></i> Abrir en Maps
-                                    </a>
-                                </div>
-                            `;
-                        }
-                    }
-
-                    const card = document.createElement('div');
-                    card.className = 'order-card';
-                    card.innerHTML = `
-                        <div class="status-badge ${badgeClass}">${p.estado || 'Pendiente'}</div>
-                        <div class="order-header">
-                            <span class="ticket-num">Ticket #${p.id}</span>
-                            <span class="order-time"><i class="fa-regular fa-clock"></i> ${p.hora_entrega}</span>
-                        </div>
-                        
-                        <div class="client-info" style="display: flex; flex-direction: column; gap: 10px; background: #F9FAFB; padding: 15px; border-radius: 12px;">
-                            
-                            <div style="display: flex; align-items: flex-start; gap: 12px;">
-                                <i class="fa-regular fa-user" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
-                                <span style="font-weight: 800; color: var(--warm-1); font-size: 1rem;">${p.cliente}</span>
-                            </div>
-                            
-                            <div style="display: flex; align-items: flex-start; gap: 12px;">
-                                <i class="fa-solid fa-location-dot" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
-                                <div style="flex: 1; color: var(--warm-2); font-size: 0.9rem; line-height: 1.4;">
-                                    ${direccionLimpia}
-                                    ${btnGoogleMaps}
-                                </div>
-                            </div>
-                            
-                            <div style="display: flex; align-items: flex-start; gap: 12px;">
-                                <i class="fa-solid fa-money-bill-wave" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
-                                <span style="color: var(--warm-2); font-size: 0.9rem;">Paga con: <strong style="color: var(--warm-1);">${p.metodo_pago}</strong></span>
-                            </div>
-                            
-                            ${p.notas ? `
-                            <div style="display: flex; align-items: flex-start; gap: 12px; margin-top: 5px; padding-top: 12px; border-top: 1px dashed #fad7a1;">
-                                <i class="fa-solid fa-circle-exclamation" style="color: var(--coral); margin-top: 2px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
-                                <span style="color: var(--coral); font-size: 0.85rem; line-height: 1.4;"><strong>Nota del cliente:</strong> ${p.notas}</span>
-                            </div>` : ''}
-                            
-                        </div>
-                        
-                        <div class="order-total" style="margin-top: 15px;">Total: ${fmt(p.total)}</div>
-                        <div style="margin-top:10px;">${btnAction}</div>
-                    `;
-                    container.appendChild(card);
+    const container = document.getElementById('orders-container');
+    try {
+        const res = await fetch(`${API_URL}/api/pedidos`);
+        const pedidos = await res.json();
+        
+        if (pedidos.length > 0) {
+            const maxId = Math.max(...pedidos.map(p => p.id));
+            if (ultimoPedidoId !== 0 && maxId > ultimoPedidoId) {
+                Swal.fire({
+                    toast: true, position: 'top-end', icon: 'info',
+                    title: `¡Nuevo Pedido Recibido! (Ticket #${maxId})`,
+                    showConfirmButton: false, timer: 5000,
+                    background: '#E4F5F7', color: '#2d8a96'
                 });
-            } catch (error) {
-                container.innerHTML = '<p>Error cargando pedidos.</p>';
             }
+            ultimoPedidoId = maxId;
         }
 
-        async function cambiarEstadoPedido(id, nuevoEstado, boton) {
-            if(boton) boton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-            await fetch(`/api/pedidos/${id}/estado`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ estado: nuevoEstado })
-            });
-            cargarPedidos();
+        container.innerHTML = '';
+
+        if(pedidos.length === 0) {
+            container.innerHTML = '<p style="text-align:center; padding: 20px; color:#aaa;">No hay pedidos activos.</p>';
+            return;
         }
 
-        // ─── LÓGICA DE PRODUCTOS ──────────────────────────────────────────────
-        function abrirModalEdicion(id, nombre, desc, precio, cat) {
-            document.getElementById('modal-title').innerHTML = '<i class="fa-solid fa-pen"></i> Editar Producto';
-            document.getElementById('prod-id').value = id; 
-            document.getElementById('prod-name').value = nombre;
-            document.getElementById('prod-desc').value = desc;
-            document.getElementById('prod-price').value = precio;
-            document.getElementById('prod-cat').value = cat;
-            prodModal.classList.add('active');
-        }
+        pedidos.forEach(p => {
+            let badgeClass = 'status-pendiente';
+            let btnAction = '';
 
-        async function cargarProductosAdmin() {
-            const container = document.getElementById('products-container');
-            try {
-                const res = await fetch(`/api/productos?admin=true`);
-                const productos = await res.json();
-                container.innerHTML = '';
-
-                productos.forEach(p => {
-                    let icono = '📦';
-                    if(p.categoria === 'comidas') icono = '🍔';
-                    if(p.categoria === 'bebidas') icono = '🥤';
-                    if(p.categoria === 'panaderia') icono = '🍞';
-                    if(p.categoria === 'aseo') icono = '🧴';
-                    if(p.categoria === 'hogar') icono = '🏠';
-
-                    // Conectamos la imagen con el host de Node (localhost:3000)
-                    const visualizacionMedia = p.imagen_url 
-                        ? `<img src="${p.imagen_url}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;">`
-                        : icono;
-
-                    const card = document.createElement('div');
-                    card.className = 'product-card';
-                    card.innerHTML = `
-                        <div class="prod-info-wrapper">
-                            <div class="prod-emoji-box">${visualizacionMedia}</div>
-                            <div class="prod-details">
-                                <h4>${p.nombre}</h4>
-                                <p>${p.descripcion}</p>
-                                <span>${fmt(p.precio)}</span>
-                            </div>
-                        </div>
-                        <div class="prod-actions" style="flex-direction: row; align-items: center;">
-                            <label class="switch" title="Disponibilidad" style="margin-right: 10px;">
-                                <input type="checkbox" ${p.disponible ? 'checked' : ''} onchange="cambiarDisponibilidad(${p.id}, this.checked)">
-                                <span class="slider"></span>
-                            </label>
-                            <button class="btn-edit" onclick="abrirModalEdicion(${p.id}, '${p.nombre}', '${p.descripcion}', ${p.precio}, '${p.categoria}')" title="Editar"><i class="fa-regular fa-pen-to-square"></i></button>
-                            <button class="btn-delete" onclick="eliminarProducto(${p.id}, '${p.nombre}')" title="Eliminar"><i class="fa-regular fa-trash-can"></i></button>
-                        </div>
-                    `;
-                    container.appendChild(card);
-                });
-            } catch (error) {
-                container.innerHTML = '<p>Error al cargar productos.</p>';
-            }
-        }
-
-        async function cambiarDisponibilidad(id, estaChequeado) {
-            const disponible = estaChequeado ? 1 : 0;
-            await fetch(`/api/productos/${id}/disponibilidad`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ disponible })
-            });
-        }
-
-        function eliminarProducto(id, nombre) {
-            Swal.fire({
-                title: '¿Estás seguro?',
-                text: `Vas a eliminar "${nombre}" definitivamente del menú.`,
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#FF6B6B',
-                cancelButtonColor: '#BFB3AD',
-                confirmButtonText: 'Sí, eliminar',
-                cancelButtonText: 'Cancelar',
-                background: '#FFF9F2',
-                color: '#2A1F1A'
-            }).then(async (result) => {
-                if (result.isConfirmed) {
-                    await fetch(`/api/productos/${id}`, { method: 'DELETE' });
-                    Swal.fire({ title: '¡Eliminado!', text: 'El producto ha sido borrado.', icon: 'success', confirmButtonColor: '#3D9EAB' });
-                    cargarProductosAdmin();
-                }
-            });
-        }
-
-        document.getElementById('product-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const idProducto = document.getElementById('prod-id').value;
-            const formData = new FormData();
-            
-            formData.append('nombre', document.getElementById('prod-name').value);
-            formData.append('descripcion', document.getElementById('prod-desc').value);
-            formData.append('precio', document.getElementById('prod-price').value);
-            formData.append('categoria', document.getElementById('prod-cat').value);
-            
-            const fileInput = document.getElementById('prod-img');
-            if (fileInput && fileInput.files[0]) {
-                formData.append('imagen', fileInput.files[0]);
-            }
-
-            if (idProducto) {
-                await fetch(`/api/productos/${idProducto}`, { method: 'PUT', body: formData });
-                Swal.fire({ title: '¡Actualizado!', text: 'El producto se modificó correctamente.', icon: 'success', confirmButtonColor: '#3D9EAB' });
+            if(p.estado === 'Pendiente' || !p.estado) {
+                badgeClass = 'status-pendiente';
+                btnAction = `<button class="btn btn-primary" style="width:100%" onclick="cambiarEstadoPedido(${p.id}, 'Preparando', this)"><i class="fa-solid fa-fire-burner"></i> Preparar</button>`;
+            } else if(p.estado === 'Preparando') {
+                badgeClass = 'status-preparando';
+                btnAction = `<button class="btn btn-outline" onclick="cambiarEstadoPedido(${p.id}, 'Entregado', this)"><i class="fa-solid fa-motorcycle"></i> Despachar</button>`;
             } else {
-                await fetch(`/api/productos`, { method: 'POST', body: formData });
-                Swal.fire({ title: '¡Creado!', text: 'El producto se agregó exitosamente al menú.', icon: 'success', confirmButtonColor: '#3D9EAB' });
+                badgeClass = 'status-entregado';
+                btnAction = `<button class="btn btn-outline" disabled><i class="fa-solid fa-check"></i> Finalizado</button>`;
             }
 
-            document.getElementById('product-form').reset();
-            prodModal.classList.remove('active');
-            cargarProductosAdmin();
-        });
-
-        // ─── LÓGICA DE REPORTES ───────────────────────────────────────────────
-        async function cargarReportes() {
-            try {
-                const res = await fetch(`/api/reportes`);
-                const data = await res.json();
-                
-                // Extraemos los totales (vienen nulos si la BD está vacía)
-                const ingresos = data.totales.ingresos_totales || 0;
-                const pedidos = data.totales.total_pedidos || 0;
-                const ticketPromedio = pedidos > 0 ? (ingresos / pedidos) : 0;
-
-                // Pintamos los KPIs numéricos
-                document.getElementById('kpi-ingresos').textContent = fmt(ingresos);
-                document.getElementById('kpi-pedidos').textContent = pedidos;
-                document.getElementById('kpi-ticket').textContent = fmt(ticketPromedio);
-
-                // Pintamos el Top 5 de productos
-                const topList = document.getElementById('top-products-list');
-                topList.innerHTML = '';
-
-                if (data.topProductos.length === 0) {
-                    topList.innerHTML = '<p style="color: #aaa; text-align: center; padding: 20px;">Aún no hay ventas registradas.</p>';
-                } else {
-                    const medallas = ['🥇', '🥈', '🥉', '🔹', '🔹'];
-                    data.topProductos.forEach((prod, index) => {
-                        topList.innerHTML += `
-                            <div class="top-item">
-                                <div class="top-name">
-                                    <span>${medallas[index] || '🔹'}</span> 
-                                    ${prod.nombre_producto}
-                                </div>
-                                <div class="top-qty">${prod.total_vendido} vendidos</div>
-                            </div>
-                        `;
-                    });
-                }
-            } catch (error) {
-                console.error("Error cargando reportes:", error);
-            }
-        }
-
-        // ─── LÓGICA DE CERRAR SESIÓN ────────────────────────────────────────
-        document.getElementById('btn-logout').addEventListener('click', (e) => {
-            e.preventDefault(); // Evita que la página salte hacia arriba
+            // ─── DETECTOR DE GOOGLE MAPS CORREGIDO ───
+            let direccionLimpia = p.direccion;
+            let btnGoogleMaps = '';
             
-            Swal.fire({
-                title: '¿Cerrar Sesión?',
-                text: "Saldrás del panel de administrador y volverás a la tienda.",
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#FF6B6B', // Tu color coral
-                cancelButtonColor: '#BFB3AD',
-                confirmButtonText: 'Sí, salir',
-                cancelButtonText: 'Cancelar',
-                background: '#FFF9F2',
-                color: '#2A1F1A'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    // Redirigimos al inicio de la tienda
-                    window.location.href = '/'; 
-                    // Si tu archivo se llama index.html y da error, cámbialo a:
-                    // window.location.href = 'index.html';
+            if (p.direccion && p.direccion.includes('Ubicación GPS')) {
+                const match = p.direccion.match(/\(([^)]+)\)/);
+                if (match) {
+                    const coordenadas = match[1].replace(' ', '');
+                    direccionLimpia = '📍 Ubicación enviada por GPS';
+                    btnGoogleMaps = `
+                        <div style="margin-top: 8px;">
+                            <a href="https://www.google.com/maps/search/?api=1&query=${coordenadas}" target="_blank" 
+                               style="display: inline-flex; align-items: center; gap: 6px; background: var(--teal-light); color: var(--teal-dark); 
+                               text-decoration: none; font-weight: 800; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; border: 1px solid #A8E0E8; transition: 0.2s;">
+                               <i class="fa-solid fa-map-location-dot"></i> Abrir en Maps
+                            </a>
+                        </div>
+                    `;
                 }
-            });
-        });
+            }
 
-        // Cargar vista por defecto
-        document.addEventListener('DOMContentLoaded', cargarPedidos);
-        // Preguntar a la base de datos cada 5 segundos si hay pedidos nuevos
-        setInterval(cargarPedidos, 5000);
+            let listaProductosHTML = '<div style="margin-top: 15px; border-top: 2px dashed #eee; padding-top: 10px;">';
+            listaProductosHTML += '<h5 style="color: var(--teal-dark); margin-bottom: 8px; font-size: 0.85rem; text-transform: uppercase;">Orden:</h5>';
+            
+            if (p.productos && p.productos.length > 0) {
+                p.productos.forEach(prod => {
+                    listaProductosHTML += `
+                        <div style="display: flex; justify-content: space-between; font-size: 0.95rem; margin-bottom: 5px; color: var(--warm-1);">
+                            <span><strong style="color: var(--teal); font-size: 1.05rem;">${prod.cantidad}x</strong> ${prod.nombre_producto}</span>
+                        </div>`;
+                });
+            } else {
+                listaProductosHTML += `<p style="font-size: 0.85rem; color: #aaa;">Sin detalles registrados</p>`;
+            }
+            listaProductosHTML += '</div>';
+
+            const card = document.createElement('div');
+            card.className = 'order-card';
+            card.innerHTML = `
+                <div class="status-badge ${badgeClass}">${p.estado || 'Pendiente'}</div>
+                <div class="order-header">
+                    <span class="ticket-num">Ticket #${p.id}</span>
+                    <span class="order-time"><i class="fa-regular fa-clock"></i> ${p.hora_entrega}</span>
+                </div>
+                
+                <div class="client-info" style="display: flex; flex-direction: column; gap: 10px; background: #F9FAFB; padding: 15px; border-radius: 12px;">
+                    <div style="display: flex; align-items: flex-start; gap: 12px;">
+                        <i class="fa-regular fa-user" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
+                        <span style="font-weight: 800; color: var(--warm-1); font-size: 1rem;">${p.cliente}</span>
+                    </div>
+                    <div style="display: flex; align-items: flex-start; gap: 12px;">
+                        <i class="fa-solid fa-location-dot" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
+                        <div style="flex: 1; color: var(--warm-2); font-size: 0.9rem; line-height: 1.4;">
+                            ${direccionLimpia}
+                            ${btnGoogleMaps}
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: flex-start; gap: 12px;">
+                        <i class="fa-solid fa-money-bill-wave" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
+                        <span style="color: var(--warm-2); font-size: 0.9rem;">Paga con: <strong style="color: var(--warm-1);">${p.metodo_pago}</strong></span>
+                    </div>
+                    ${p.notas ? `
+                    <div style="display: flex; align-items: flex-start; gap: 12px; margin-top: 5px; padding-top: 12px; border-top: 1px dashed #fad7a1;">
+                        <i class="fa-solid fa-circle-exclamation" style="color: var(--coral); margin-top: 2px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
+                        <span style="color: var(--coral); font-size: 0.85rem; line-height: 1.4;"><strong>Nota del cliente:</strong> ${p.notas}</span>
+                    </div>` : ''}
+                </div>
+                ${listaProductosHTML}
+                <div class="order-total" style="margin-top: 15px; font-size: 1.2rem;">Total: ${fmt(p.total)}</div>
+                <div style="margin-top:10px;">${btnAction}</div>
+            `;
+            container.appendChild(card);
+        });
+    } catch (error) {
+        container.innerHTML = '<p style="text-align:center;">Error cargando pedidos o la BD está vacía.</p>';
+    }
+}
+
+async function cambiarEstadoPedido(id, nuevoEstado, boton) {
+    if(boton) boton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    await fetch(`${API_URL}/api/pedidos/${id}/estado`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: nuevoEstado })
+    });
+    cargarPedidos();
+}
+
+// ─── LÓGICA DE PRODUCTOS ──────────────────────────────────────────────
+function abrirModalEdicion(id, nombre, desc, precio, cat) {
+    document.getElementById('modal-title').innerHTML = '<i class="fa-solid fa-pen"></i> Editar Producto';
+    document.getElementById('prod-id').value = id; 
+    document.getElementById('prod-name').value = nombre;
+    document.getElementById('prod-desc').value = desc;
+    document.getElementById('prod-price').value = precio;
+    document.getElementById('prod-cat').value = cat;
+    prodModal.classList.add('active');
+}
+
+async function cargarProductosAdmin() {
+    const container = document.getElementById('products-container');
+    try {
+        const res = await fetch(`${API_URL}/api/productos?admin=true`);
+        const productos = await res.json();
+        container.innerHTML = '';
+
+        productos.forEach(p => {
+            let icono = '📦';
+            if(p.categoria === 'comidas') icono = '🍔';
+            if(p.categoria === 'bebidas') icono = '🥤';
+            if(p.categoria === 'panaderia') icono = '🍞';
+            if(p.categoria === 'aseo') icono = '🧴';
+            if(p.categoria === 'hogar') icono = '🏠';
+
+            const visualizacionMedia = p.imagen_url 
+                ? `<img src="${API_URL}${p.imagen_url}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;">`
+                : icono;
+
+            const card = document.createElement('div');
+            card.className = 'product-card';
+            card.innerHTML = `
+                <div class="prod-info-wrapper">
+                    <div class="prod-emoji-box">${visualizacionMedia}</div>
+                    <div class="prod-details">
+                        <h4>${p.nombre}</h4>
+                        <p>${p.descripcion}</p>
+                        <span>${fmt(p.precio)}</span>
+                    </div>
+                </div>
+                <div class="prod-actions" style="flex-direction: row; align-items: center;">
+                    <label class="switch" title="Disponibilidad" style="margin-right: 10px;">
+                        <input type="checkbox" ${p.disponible ? 'checked' : ''} onchange="cambiarDisponibilidad(${p.id}, this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                    <button class="btn-edit" onclick="abrirModalEdicion(${p.id}, '${p.nombre}', '${p.descripcion}', ${p.precio}, '${p.categoria}')" title="Editar"><i class="fa-regular fa-pen-to-square"></i></button>
+                    <button class="btn-delete" onclick="eliminarProducto(${p.id}, '${p.nombre}')" title="Eliminar"><i class="fa-regular fa-trash-can"></i></button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    } catch (error) {
+        container.innerHTML = '<p>Error al cargar productos.</p>';
+    }
+}
+
+async function cambiarDisponibilidad(id, estaChequeado) {
+    const disponible = estaChequeado ? 1 : 0;
+    await fetch(`${API_URL}/api/productos/${id}/disponibilidad`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disponible })
+    });
+}
+
+function eliminarProducto(id, nombre) {
+    Swal.fire({
+        title: '¿Estás seguro?',
+        text: `Vas a eliminar "${nombre}" del menú.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#FF6B6B',
+        cancelButtonColor: '#BFB3AD',
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar',
+        background: '#FFF9F2',
+        color: '#2A1F1A'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            await fetch(`${API_URL}/api/productos/${id}`, { method: 'DELETE' });
+            Swal.fire({ title: '¡Eliminado!', text: 'El producto ha sido borrado.', icon: 'success', confirmButtonColor: '#3D9EAB' });
+            cargarProductosAdmin();
+        }
+    });
+}
+
+document.getElementById('product-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const idProducto = document.getElementById('prod-id').value;
+    const formData = new FormData();
+    
+    formData.append('nombre', document.getElementById('prod-name').value);
+    formData.append('descripcion', document.getElementById('prod-desc').value);
+    formData.append('precio', document.getElementById('prod-price').value);
+    formData.append('categoria', document.getElementById('prod-cat').value);
+    
+    const fileInput = document.getElementById('prod-img');
+    if (fileInput && fileInput.files[0]) {
+        formData.append('imagen', fileInput.files[0]);
+    }
+
+    if (idProducto) {
+        await fetch(`${API_URL}/api/productos/${idProducto}`, { method: 'PUT', body: formData });
+        Swal.fire({ title: '¡Actualizado!', text: 'Producto modificado.', icon: 'success', confirmButtonColor: '#3D9EAB' });
+    } else {
+        await fetch(`${API_URL}/api/productos`, { method: 'POST', body: formData });
+        Swal.fire({ title: '¡Creado!', text: 'Producto agregado al menú.', icon: 'success', confirmButtonColor: '#3D9EAB' });
+    }
+
+    document.getElementById('product-form').reset();
+    prodModal.classList.remove('active');
+    cargarProductosAdmin();
+});
+
+// ─── LÓGICA DE REPORTES ───────────────────────────────────────────────
+async function cargarReportes() {
+    try {
+        const res = await fetch(`${API_URL}/api/reportes`);
+        const data = await res.json();
+        
+        const ingresos = data.totales.ingresos_totales || 0;
+        const pedidos = data.totales.total_pedidos || 0;
+        const ticketPromedio = pedidos > 0 ? (ingresos / pedidos) : 0;
+
+        document.getElementById('kpi-ingresos').textContent = fmt(ingresos);
+        document.getElementById('kpi-pedidos').textContent = pedidos;
+        document.getElementById('kpi-ticket').textContent = fmt(ticketPromedio);
+
+        const topList = document.getElementById('top-products-list');
+        topList.innerHTML = '';
+
+        if (data.topProductos.length === 0) {
+            topList.innerHTML = '<p style="color: #aaa; text-align: center; padding: 20px;">Aún no hay ventas registradas.</p>';
+        } else {
+            const medallas = ['🥇', '🥈', '🥉', '🔹', '🔹'];
+            data.topProductos.forEach((prod, index) => {
+                topList.innerHTML += `
+                    <div class="top-item">
+                        <div class="top-name">
+                            <span>${medallas[index] || '🔹'}</span> 
+                            ${prod.nombre_producto}
+                        </div>
+                        <div class="top-qty">${prod.total_vendido} vendidos</div>
+                    </div>
+                `;
+            });
+        }
+    } catch (error) {
+        console.error("Error cargando reportes:", error);
+    }
+}
+
+// ─── LÓGICA DE CERRAR SESIÓN ────────────────────────────────────────
+document.getElementById('btn-logout').addEventListener('click', (e) => {
+    e.preventDefault(); 
+    Swal.fire({
+        title: '¿Cerrar Sesión?',
+        text: "Saldrás del panel de administrador y volverás a la tienda.",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#FF6B6B',
+        cancelButtonColor: '#BFB3AD',
+        confirmButtonText: 'Sí, salir',
+        cancelButtonText: 'Cancelar',
+        background: '#FFF9F2',
+        color: '#2A1F1A'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.location.href = '/'; 
+        }
+    });
+});
+
+document.addEventListener('DOMContentLoaded', cargarPedidos);
+setInterval(cargarPedidos, 5000);
     </script>
 </body>
 </html>

@@ -119,12 +119,29 @@ app.delete('/api/productos/:id', (req, res) => {
 // ─── RUTAS DE PEDIDOS ───────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════
 
-// 1. Obtener todos los pedidos (Para el admin)
+// 1. Obtener todos los pedidos (Para el admin) + LOS PRODUCTOS QUE PIDIÓ
 app.get('/api/pedidos', (req, res) => {
-    const sql = `SELECT * FROM pedidos ORDER BY fecha DESC`;
-    db.query(sql, (err, results) => {
+    // Primero traemos los pedidos generales
+    const sqlPedidos = `SELECT * FROM pedidos ORDER BY fecha DESC`;
+    
+    db.query(sqlPedidos, (err, pedidos) => {
         if (err) return res.status(500).json({ error: 'Error obteniendo pedidos' });
-        res.json(results);
+        
+        if (pedidos.length === 0) return res.json([]); // Si no hay pedidos, devolvemos vacío
+
+        // Si hay pedidos, traemos TODOS los detalles de comida de la BD
+        const sqlDetalles = `SELECT * FROM detalle_pedidos`;
+        db.query(sqlDetalles, (err2, detalles) => {
+            if (err2) return res.status(500).json({ error: 'Error obteniendo detalles' });
+
+            // Le metemos a cada pedido su lista de hamburguesas/bebidas correspondiente
+            const pedidosCompletos = pedidos.map(p => {
+                p.productos = detalles.filter(d => d.pedido_id === p.id);
+                return p;
+            });
+
+            res.json(pedidosCompletos);
+        });
     });
 });
 
