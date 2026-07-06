@@ -604,17 +604,39 @@ document.getElementById('product-form').addEventListener('submit', async (e) => 
         formData.append('imagen', fileInput.files[0]);
     }
 
-    if (idProducto) {
-        await fetch(`${API_URL}/api/productos/${idProducto}`, { method: 'PUT', body: formData });
-        Swal.fire({ title: '¡Actualizado!', text: 'Producto modificado.', icon: 'success', confirmButtonColor: '#3D9EAB' });
-    } else {
-        await fetch(`${API_URL}/api/productos`, { method: 'POST', body: formData });
-        Swal.fire({ title: '¡Creado!', text: 'Producto agregado al menú.', icon: 'success', confirmButtonColor: '#3D9EAB' });
-    }
+    // Cambiamos el texto del botón mientras carga
+    const btnSubmit = e.target.querySelector('button[type="submit"]');
+    const textoOriginal = btnSubmit.innerHTML;
+    btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+    btnSubmit.disabled = true;
 
-    document.getElementById('product-form').reset();
-    prodModal.classList.remove('active');
-    cargarProductosAdmin();
+    try {
+        let res;
+        if (idProducto) {
+            res = await fetch(`${API_URL}/api/productos/${idProducto}`, { method: 'PUT', body: formData });
+        } else {
+            res = await fetch(`${API_URL}/api/productos`, { method: 'POST', body: formData });
+        }
+
+        // Si el backend da un error, frenamos aquí
+        if (!res.ok) throw new Error('Error al guardar en el servidor');
+
+        Swal.fire({ title: '¡Listo!', text: 'Producto guardado con éxito.', icon: 'success', confirmButtonColor: '#3D9EAB' });
+        document.getElementById('product-form').reset();
+        prodModal.classList.remove('active');
+        cargarProductosAdmin();
+    } catch (error) {
+        console.error(error);
+        Swal.fire({ 
+            title: 'Uy, un error', 
+            text: 'No se pudo subir la imagen o crear el producto. Revisa la base de datos.', 
+            icon: 'error', 
+            confirmButtonColor: '#FF6B6B' 
+        });
+    } finally {
+        btnSubmit.innerHTML = textoOriginal;
+        btnSubmit.disabled = false;
+    }
 });
 
 // ─── LÓGICA DE REPORTES ───────────────────────────────────────────────

@@ -5,10 +5,18 @@ const cors = require('cors');
 const path = require('path');
 const multer = require('multer');
 
+const fs = require('fs'); // Añade esto al principio con tus otros requires
+
 // ─── Configuración de Multer (Imágenes) ─────────────────────────────
+// MAGIA: Nos aseguramos de que la carpeta exista, si no, Node la crea automática.
+const uploadDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'public/uploads/');
+        cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
         cb(null, Date.now() + path.extname(file.originalname));
