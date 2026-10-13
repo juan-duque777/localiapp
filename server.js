@@ -211,7 +211,8 @@ app.get('/api/productos', (req, res) => {
     const sql = isAdmin
         ? 'SELECT * FROM productos'
         : `SELECT p.* FROM productos p
-           LEFT JOIN categorias c ON c.slug = p.categoria
+           LEFT JOIN categorias c
+               ON c.slug COLLATE utf8mb4_general_ci = p.categoria COLLATE utf8mb4_general_ci
            WHERE p.disponible = 1 AND (c.disponible = 1 OR c.slug IS NULL)`;
     
     db.query(sql, (err, results) => {
