@@ -215,6 +215,16 @@ app.get('/api/productos', (req, res) => {
            WHERE p.disponible = 1 AND (c.disponible = 1 OR c.slug IS NULL)`;
     
     db.query(sql, (err, results) => {
+        if (err && !isAdmin && err.code === 'ER_NO_SUCH_TABLE' && /categorias/i.test(err.message)) {
+            console.warn('La tabla categorias no existe; devolviendo productos disponibles sin filtro de categoría.');
+            return db.query(
+                'SELECT * FROM productos WHERE disponible = 1',
+                (fallbackErr, fallbackResults) => {
+                    if (fallbackErr) return res.status(500).json({ error: fallbackErr.message });
+                    res.json(fallbackResults);
+                }
+            );
+        }
         if (err) return res.status(500).json({ error: err.message });
         res.json(results);
     });

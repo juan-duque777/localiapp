@@ -1,5 +1,6 @@
-// ─── MAGIA: Autodetecta el entorno (Local o Render) ───────────────────
-const API_URL = window.location.hostname.includes('onrender.com') ? '' : 'http://localhost:3000';
+// Usa el backend local solo durante desarrollo; en producción, comparte el origen.
+const isLocalHost = ['', 'localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+const API_URL = isLocalHost && window.location.port !== '3000' ? 'http://localhost:3000' : '';
 
 // ─── Variables Globales ───────────────────────────────────────────────
 let baseDeDatosLocal = [];
@@ -56,7 +57,10 @@ function seleccionarCategoria(button) {
 
 async function cargarCategoriasCliente() {
     const response = await fetch(`${API_URL}/api/categorias`);
-    if (!response.ok) throw new Error('No se pudieron cargar las categorías');
+    if (!response.ok) {
+        const detalle = await response.text();
+        throw new Error(`No se pudieron cargar las categorías (HTTP ${response.status}): ${detalle}`);
+    }
     categoriasDisponibles = await response.json();
     renderCategoryButtons();
 }
@@ -73,7 +77,10 @@ function totalPrice() {
 async function cargarProductosDesdeBD() {
     try {
         const respuesta = await fetch(`${API_URL}/api/productos`);
-        if (!respuesta.ok) throw new Error('Error en el servidor');
+        if (!respuesta.ok) {
+            const detalle = await respuesta.text();
+            throw new Error(`No se pudieron cargar los productos (HTTP ${respuesta.status}): ${detalle}`);
+        }
 
         const productosMySQL = await respuesta.json();
 
@@ -100,7 +107,7 @@ async function cargarProductosDesdeBD() {
         const container = $('contenedor-productos');
         if(container) {
             container.innerHTML = 
-                '<div style="text-align:center; padding:2rem; color:var(--warm-3);"><p>No se pudo conectar con el local.</p></div>';
+                '<div style="text-align:center; padding:2rem; color:var(--warm-3);"><p>No se pudieron cargar los productos. Intenta de nuevo más tarde.</p></div>';
         }
     }
 }
@@ -714,10 +721,8 @@ async function abrirMisPedidos() {
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         await cargarCategoriasCliente();
-        await cargarProductosDesdeBD();
     } catch (error) {
-        console.error('Error inicializando la tienda:', error);
-        const container = $('contenedor-productos');
-        if (container) container.textContent = 'No se pudo conectar con el local.';
+        console.error('Error cargando categorías:', error);
     }
+    await cargarProductosDesdeBD();
 });

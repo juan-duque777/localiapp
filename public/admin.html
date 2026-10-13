@@ -302,8 +302,9 @@
     </div>
 
     <script>
-// MAGIA: Autodetecta si estás en tu PC o en la Nube (Render)
-const API_URL = window.location.hostname.includes('onrender.com') ? '' : 'http://localhost:3000';
+// Usa el backend local solo durante desarrollo; en producción, comparte el origen.
+const isLocalHost = ['', 'localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+const API_URL = isLocalHost && window.location.port !== '3000' ? 'http://localhost:3000' : '';
 
 let ultimoPedidoId = 0;
 const fmt = n => '$' + Number(n).toLocaleString('es-CO');
