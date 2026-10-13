@@ -3,6 +3,7 @@ const API_URL = window.location.hostname.includes('onrender.com') ? '' : 'http:/
 
 // ─── Variables Globales ───────────────────────────────────────────────
 let baseDeDatosLocal = [];
+let categoriasDisponibles = [];
 const cart = {}; // { productId: { product, qty } }
 let currentCat = 'todos';
 let currentQuery = '';
@@ -10,6 +11,54 @@ let currentQuery = '';
 // ─── Utilidades ─────────────────────────────────────────────────────
 const fmt = n => '$' + n.toLocaleString('es-CO');
 const $ = id => document.getElementById(id);
+const iconosCategoria = {
+    comidas: '🍔',
+    bebidas: '🥤',
+    panaderia: '🍞',
+    aseo: '🧴',
+    hogar: '🏠'
+};
+
+function renderCategoryButtons() {
+    const nav = document.querySelector('.categories');
+    if (!nav) return;
+
+    nav.querySelectorAll('.cat-btn:not([data-cat="todos"])').forEach(button => button.remove());
+    categoriasDisponibles.forEach(categoria => {
+        const button = document.createElement('button');
+        button.className = 'cat-btn';
+        button.dataset.cat = categoria.slug;
+
+        const icon = document.createElement('span');
+        icon.className = 'cat-em';
+        icon.textContent = iconosCategoria[categoria.slug] || '🛍️';
+        button.append(icon, document.createTextNode(` ${categoria.nombre}`));
+        button.addEventListener('click', () => seleccionarCategoria(button));
+        nav.appendChild(button);
+    });
+
+    const allButton = nav.querySelector('[data-cat="todos"]');
+    if (allButton) allButton.addEventListener('click', () => seleccionarCategoria(allButton));
+}
+
+function seleccionarCategoria(button) {
+    document.querySelectorAll('.cat-btn').forEach(item => item.classList.remove('active'));
+    button.classList.add('active');
+    currentCat = button.dataset.cat;
+
+    const categoria = categoriasDisponibles.find(item => item.slug === currentCat);
+    $('section-title').textContent = currentCat === 'todos'
+        ? 'Lo más pedido'
+        : `${iconosCategoria[currentCat] || '🛍️'} ${categoria ? categoria.nombre : 'Productos'}`;
+    renderProducts(currentCat, currentQuery);
+}
+
+async function cargarCategoriasCliente() {
+    const response = await fetch(`${API_URL}/api/categorias`);
+    if (!response.ok) throw new Error('No se pudieron cargar las categorías');
+    categoriasDisponibles = await response.json();
+    renderCategoryButtons();
+}
 
 function totalItems() {
     return Object.values(cart).reduce((s, i) => s + i.qty, 0);
@@ -29,12 +78,7 @@ async function cargarProductosDesdeBD() {
 
         // Convertimos los datos de la BD al formato que pide tu diseño
         baseDeDatosLocal = productosMySQL.map(prod => {
-            let icono = '📦';
-            if(prod.categoria === 'comidas') icono = '🍔';
-            if(prod.categoria === 'bebidas') icono = '🥤';
-            if(prod.categoria === 'panaderia') icono = '🍞';
-            if(prod.categoria === 'aseo') icono = '🧴';
-            if(prod.categoria === 'hogar') icono = '🏠';
+            const icono = iconosCategoria[prod.categoria] || '📦';
 
             return {
                 id: prod.id,
@@ -231,24 +275,6 @@ function renderProducts(filter = 'todos', query = '') {
 }
 
 // ─── Eventos de Interfaz ─────────────────────────────────────────────
-document.querySelectorAll('.cat-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentCat = btn.dataset.cat;
-
-        const titles = {
-            todos: 'Lo más pedido', comidas: '🍔 Comidas',
-            bebidas: '🥤 Bebidas', panaderia: '🍞 Panadería',
-            aseo: '🧴 Aseo', hogar: '🏠 Hogar'
-        };
-        const titleEl = $('section-title');
-        if(titleEl) titleEl.textContent = titles[currentCat] || 'Productos';
-        
-        renderProducts(currentCat, currentQuery);
-    });
-});
-
 const searchInput = $('search-input');
 if(searchInput) {
     searchInput.addEventListener('input', e => {
@@ -684,4 +710,13 @@ async function abrirMisPedidos() {
     }
 }
 // ─── Iniciar Aplicación ───────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', cargarProductosDesdeBD);
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        await cargarCategoriasCliente();
+        await cargarProductosDesdeBD();
+    } catch (error) {
+        console.error('Error inicializando la tienda:', error);
+        const container = $('contenedor-productos');
+        if (container) container.textContent = 'No se pudo conectar con el local.';
+    }
+});

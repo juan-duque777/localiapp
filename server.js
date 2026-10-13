@@ -5,11 +5,12 @@ const cors = require('cors');
 const path = require('path');
 const multer = require('multer');
 
-const fs = require('fs'); // Añade esto al principio con tus otros requires
+const fs = require('fs');
 
-// ─── Configuración de Multer (Imágenes) ─────────────────────────────
-// MAGIA: Nos aseguramos de que la carpeta exista, si no, Node la crea automática.
-const uploadDir = path.join(__dirname, 'public', 'uploads');
+const uploadDir = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, 'public', 'uploads'));
+if (process.env.RENDER && !process.env.UPLOAD_DIR) {
+    console.warn('UPLOAD_DIR no está configurado en Render; las imágenes se guardarán en almacenamiento efímero.');
+}
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -29,6 +30,7 @@ const app = express();
 // ─── Middlewares ────────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(uploadDir, { fallthrough: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
@@ -53,13 +55,112 @@ db.connect(err => {
 });
 
 // ════════════════════════════════════════════════════════════════════
+// ─── RUTAS DE CATEGORÍAS ────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════
+
+app.get('/api/categorias', (req, res) => {
+    const isAdmin = req.query.admin === 'true';
+    const sql = isAdmin
+        ? 'SELECT id, nombre, slug, disponible FROM categorias ORDER BY id'
+        : 'SELECT id, nombre, slug, disponible FROM categorias WHERE disponible = 1 ORDER BY id';
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ error: 'Error obteniendo categorías' });
+        res.json(results);
+    });
+});
+
+app.post('/api/categorias', (req, res) => {
+    const nombre = req.body && typeof req.body.nombre === 'string' ? req.body.nombre.trim() : '';
+    const slug = nombre
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 80)
+        .replace(/-$/g, '');
+
+    if (!nombre || nombre.length > 100 || !slug) {
+        return res.status(400).json({ error: 'El nombre debe tener entre 1 y 100 caracteres válidos' });
+    }
+
+    db.query(
+        'INSERT INTO categorias (nombre, slug, disponible) VALUES (?, ?, 1)',
+        [nombre, slug],
+        err => {
+            if (err && err.code === 'ER_DUP_ENTRY') {
+                return res.status(409).json({ error: 'Ya existe una categoría con ese nombre o identificador' });
+            }
+            if (err) return res.status(500).json({ error: 'Error creando categoría' });
+            res.status(201).json({ mensaje: 'Categoría creada correctamente', slug });
+        }
+    );
+});
+
+app.put('/api/categorias/:slug', (req, res) => {
+    const nombre = req.body && typeof req.body.nombre === 'string' ? req.body.nombre.trim() : '';
+    const disponible = req.body && req.body.disponible;
+
+    if (!nombre || nombre.length > 100 || ![0, 1, true, false].includes(disponible)) {
+        return res.status(400).json({ error: 'Nombre o disponibilidad de categoría inválidos' });
+    }
+
+    db.query(
+        'UPDATE categorias SET nombre = ?, disponible = ? WHERE slug = ?',
+        [nombre, disponible ? 1 : 0, req.params.slug],
+        (err, result) => {
+            if (err && err.code === 'ER_DUP_ENTRY') {
+                return res.status(409).json({ error: 'Ya existe una categoría con ese nombre' });
+            }
+            if (err) return res.status(500).json({ error: 'Error actualizando categoría' });
+            if (result.affectedRows === 0) {
+                return db.query(
+                    'SELECT id FROM categorias WHERE slug = ?',
+                    [req.params.slug],
+                    (lookupErr, rows) => {
+                        if (lookupErr) return res.status(500).json({ error: 'Error comprobando la categoría' });
+                        if (rows.length === 0) return res.status(404).json({ error: 'Categoría no encontrada' });
+                        res.json({ mensaje: 'Categoría actualizada correctamente' });
+                    }
+                );
+            }
+            res.json({ mensaje: 'Categoría actualizada correctamente' });
+        }
+    );
+});
+
+app.delete('/api/categorias/:slug', (req, res) => {
+    db.query(
+        'SELECT COUNT(*) AS total FROM productos WHERE categoria = ?',
+        [req.params.slug],
+        (err, results) => {
+            if (err) return res.status(500).json({ error: 'Error comprobando los productos de la categoría' });
+            if (results[0].total > 0) {
+                return res.status(409).json({ error: 'No se puede eliminar una categoría que todavía tiene productos asignados' });
+            }
+
+            db.query('DELETE FROM categorias WHERE slug = ?', [req.params.slug], (deleteErr, result) => {
+                if (deleteErr) return res.status(500).json({ error: 'Error eliminando categoría' });
+                if (result.affectedRows === 0) return res.status(404).json({ error: 'Categoría no encontrada' });
+                res.json({ mensaje: 'Categoría eliminada correctamente' });
+            });
+        }
+    );
+});
+
+// ════════════════════════════════════════════════════════════════════
 // ─── RUTAS DE PRODUCTOS ─────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════
 
 // 1. Obtener todos los productos (Inteligente: admin ve todos, cliente solo disponibles)
 app.get('/api/productos', (req, res) => {
     const isAdmin = req.query.admin === 'true';
-    const sql = isAdmin ? 'SELECT * FROM productos' : 'SELECT * FROM productos WHERE disponible = 1';
+    const sql = isAdmin
+        ? 'SELECT * FROM productos'
+        : `SELECT p.* FROM productos p
+           INNER JOIN categorias c ON c.slug = p.categoria
+           WHERE p.disponible = 1 AND c.disponible = 1`;
     
     db.query(sql, (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -200,7 +301,7 @@ app.get('/api/pedidos', (req, res) => {
     if (filtro === 'semana') condicionFecha = 'YEARWEEK(fecha, 1) = YEARWEEK(CURDATE(), 1)';
     if (filtro === 'mes') condicionFecha = 'MONTH(fecha) = MONTH(CURDATE()) AND YEAR(fecha) = YEAR(CURDATE())';
 
-    const sqlPedidos = `SELECT * FROM pedidos WHERE ${condicionFecha} ORDER BY fecha DESC`;
+    const sqlPedidos = `SELECT * FROM pedidos WHERE ${condicionFecha} ORDER BY fecha ASC, id ASC`;
     
     db.query(sqlPedidos, (err, pedidos) => {
         if (err) return res.status(500).json({ error: 'Error obteniendo pedidos' });
