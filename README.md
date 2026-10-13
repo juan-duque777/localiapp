@@ -18,7 +18,7 @@ La base de datos debe tener las tablas `productos`, `mesas`, `pedidos` y `detall
 
 Antes de desplegar el código nuevo, ejecuta una vez [`database/migrations/20261012_add_categories.sql`](database/migrations/20261012_add_categories.sql) contra la base MySQL de Clever Cloud. La migración convierte `productos.categoria` en un campo de texto apto para nuevos identificadores, crea `categorias` y carga las cinco categorías que ya usaba la interfaz (`comidas`, `bebidas`, `panaderia`, `aseo` y `hogar`), de modo que los productos existentes conservan su clasificación.
 
-En Clever Cloud puedes conectarte a la base con las credenciales de la aplicación y ejecutar el contenido de ese archivo desde un cliente MySQL. No reemplaces ni restaures la base de datos para aplicar esta migración: solo crea la tabla y agrega las categorías iniciales.
+En Clever Cloud puedes conectarte a la base con las credenciales de la aplicación y ejecutar el contenido de ese archivo desde un cliente MySQL. No reemplaces ni restaures la base de datos para aplicar esta migración: solo crea la tabla y agrega las categorías iniciales. Los productos disponibles cuya categoría no coincida con una categoría registrada también se mantienen visibles en “Todos”; las categorías desactivadas siguen ocultando sus productos.
 
 Después, despliega la aplicación en Render. El panel administrativo permite crear categorías, cambiar su nombre, ocultarlas de la tienda o eliminarlas cuando ya no tengan productos asignados. Ocultar una categoría también oculta sus productos a los clientes, sin borrarlos.
 

@@ -211,8 +211,8 @@ app.get('/api/productos', (req, res) => {
     const sql = isAdmin
         ? 'SELECT * FROM productos'
         : `SELECT p.* FROM productos p
-           INNER JOIN categorias c ON c.slug = p.categoria
-           WHERE p.disponible = 1 AND c.disponible = 1`;
+           LEFT JOIN categorias c ON c.slug = p.categoria
+           WHERE p.disponible = 1 AND (c.disponible = 1 OR c.slug IS NULL)`;
     
     db.query(sql, (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
