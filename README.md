@@ -24,12 +24,12 @@ Después, despliega la aplicación en Render. El panel administrativo permite cr
 
 ### Imágenes en Render
 
-Render puede reemplazar el sistema de archivos local al reiniciar o volver a desplegar el servicio. Para conservar las imágenes:
+El disco local de Render puede borrarse al reiniciar o volver a desplegar el servicio. La aplicación usa Cloudinary para que las nuevas imágenes se guarden fuera de Render y puedan seguir mostrándose tras esos cambios.
 
-1. En la configuración del servicio web de Render, crea y monta un **Persistent Disk** con el punto de montaje `/var/data`.
-2. En las variables de entorno del servicio, configura `UPLOAD_DIR=/var/data/uploads`.
-3. Despliega la aplicación. El servidor creará la subcarpeta `uploads` y servirá esos archivos desde `/uploads/...`.
+1. Crea una cuenta de Cloudinary y copia los valores **Cloud name**, **API Key** y **API Secret** de su consola.
+2. En Render, abre **Environment** en el servicio web y añade las variables `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` y `CLOUDINARY_API_SECRET` con esos valores.
+3. Despliega la aplicación. Al cargar una imagen desde el panel, se enviará a la carpeta `localiapp/productos` de Cloudinary y la URL segura quedará guardada en la columna `productos.imagen_url`.
 
-La aplicación conserva la ruta local `public/uploads` como valor predeterminado para desarrollo. En Render, las imágenes nuevas solo persistirán si `UPLOAD_DIR` apunta dentro del disco persistente montado. Si el tipo o plan de servicio no permite discos persistentes, se necesita almacenamiento externo de archivos en lugar del disco efímero del servicio.
+Configura las tres variables juntas; el servidor rechazará una configuración parcial. Si Cloudinary todavía no está configurado en Render, las cargas se desactivan explícitamente en vez de guardarse en el disco efímero. En desarrollo local, si esas variables no están configuradas, se mantiene el almacenamiento local en `public/uploads`.
 
-Las imágenes que ya desaparecieron del disco de Render no pueden recuperarse desde esta aplicación: habrá que volver a cargarlas después de configurar el disco persistente.
+Las imágenes que Render ya eliminó no se pueden recuperar desde este proyecto. Una vez configuradas las variables y desplegado el cambio, vuelve a subir esas imágenes desde la edición de cada producto. Las URLs de imágenes que aún estén guardadas en la base de datos continúan funcionando.

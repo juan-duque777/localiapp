@@ -4,18 +4,35 @@ const mysql = require('mysql2');
 const cors = require('cors');
 const path = require('path');
 const multer = require('multer');
+const { Readable } = require('stream');
+const cloudinary = require('cloudinary').v2;
 
 const fs = require('fs');
 
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, 'public', 'uploads'));
-if (process.env.RENDER && !process.env.UPLOAD_DIR) {
-    console.warn('UPLOAD_DIR no está configurado en Render; las imágenes se guardarán en almacenamiento efímero.');
+const cloudinaryVariables = ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
+const configuredCloudinaryVariables = cloudinaryVariables.filter(name => process.env[name]);
+const useCloudinary = configuredCloudinaryVariables.length === cloudinaryVariables.length;
+
+if (configuredCloudinaryVariables.length > 0 && !useCloudinary) {
+    throw new Error('Configura CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY y CLOUDINARY_API_SECRET juntos.');
 }
-if (!fs.existsSync(uploadDir)) {
+
+if (useCloudinary) {
+    cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+} else if (process.env.RENDER) {
+    console.warn('Cloudinary no está configurado; las cargas de imágenes estarán deshabilitadas en Render.');
+}
+
+if (!useCloudinary && !process.env.RENDER && !fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-const storage = multer.diskStorage({
+const diskStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, uploadDir);
     },
@@ -23,14 +40,49 @@ const storage = multer.diskStorage({
         cb(null, Date.now() + path.extname(file.originalname));
     }
 });
-const upload = multer({ storage: storage });
+const upload = multer({
+    storage: useCloudinary || process.env.RENDER ? multer.memoryStorage() : diskStorage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (!file.mimetype.startsWith('image/')) {
+            return cb(new Error('Solo se permiten archivos de imagen'));
+        }
+        cb(null, true);
+    }
+});
+
+function guardarImagen(file) {
+    if (!file) return Promise.resolve(null);
+    if (!useCloudinary) {
+        if (process.env.RENDER) {
+            return Promise.reject(new Error('Configura Cloudinary en Render para habilitar las cargas de imágenes'));
+        }
+        return Promise.resolve(`/uploads/${file.filename}`);
+    }
+
+    return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+            { folder: 'localiapp/productos', resource_type: 'image' },
+            (error, result) => {
+                if (error) return reject(error);
+                if (!result || !result.secure_url) {
+                    return reject(new Error('Cloudinary no devolvió la URL de la imagen'));
+                }
+                resolve(result.secure_url);
+            }
+        );
+        Readable.from([file.buffer]).pipe(stream);
+    });
+}
 
 const app = express();
 
 // ─── Middlewares ────────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(uploadDir, { fallthrough: false }));
+if (!useCloudinary) {
+    app.use('/uploads', express.static(uploadDir, { fallthrough: false }));
+}
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
@@ -169,9 +221,15 @@ app.get('/api/productos', (req, res) => {
 });
 
 // 2. Crear nuevo producto (Soporta imagen)
-app.post('/api/productos', upload.single('imagen'), (req, res) => {
+app.post('/api/productos', upload.single('imagen'), async (req, res) => {
     const { nombre, descripcion, precio, categoria } = req.body;
-    const imagen_url = req.file ? `/uploads/${req.file.filename}` : null;
+    let imagen_url;
+    try {
+        imagen_url = await guardarImagen(req.file);
+    } catch (err) {
+        console.error('Error al guardar imagen del producto:', err);
+        return res.status(process.env.RENDER && !useCloudinary ? 503 : 502).json({ error: err.message });
+    }
     
     const sql = `INSERT INTO productos (nombre, descripcion, precio, categoria, disponible, imagen_url) VALUES (?, ?, ?, ?, 1, ?)`;
     
@@ -182,7 +240,7 @@ app.post('/api/productos', upload.single('imagen'), (req, res) => {
 });
 
 // 3. Editar producto (Soporta actualización de imagen)
-app.put('/api/productos/:id', upload.single('imagen'), (req, res) => {
+app.put('/api/productos/:id', upload.single('imagen'), async (req, res) => {
     const productoId = req.params.id;
     const { nombre, descripcion, precio, categoria } = req.body;
     
@@ -190,7 +248,13 @@ app.put('/api/productos/:id', upload.single('imagen'), (req, res) => {
     let params = [nombre, descripcion, precio, categoria, productoId];
     
     if (req.file) {
-        const imagen_url = `/uploads/${req.file.filename}`;
+        let imagen_url;
+        try {
+            imagen_url = await guardarImagen(req.file);
+        } catch (err) {
+            console.error('Error al actualizar imagen del producto:', err);
+            return res.status(process.env.RENDER && !useCloudinary ? 503 : 502).json({ error: err.message });
+        }
         sql = `UPDATE productos SET nombre = ?, descripcion = ?, precio = ?, categoria = ?, imagen_url = ? WHERE id = ?`;
         params = [nombre, descripcion, precio, categoria, imagen_url, productoId];
     }
@@ -409,6 +473,23 @@ app.get('/api/reportes', (req, res) => {
             });
         });
     });
+});
+
+app.use((err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    if (err instanceof multer.MulterError) {
+        const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+        return res.status(status).json({
+            error: err.code === 'LIMIT_FILE_SIZE'
+                ? 'La imagen no puede superar los 5 MB'
+                : 'No se pudo procesar el archivo de imagen'
+        });
+    }
+    if (err.message === 'Solo se permiten archivos de imagen') {
+        return res.status(400).json({ error: err.message });
+    }
+    console.error('Error procesando solicitud:', err);
+    res.status(500).json({ error: 'Error interno del servidor' });
 });
 
 // ─── Iniciar Servidor ───────────────────────────────────────────────

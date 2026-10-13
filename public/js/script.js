@@ -11,6 +11,7 @@ let currentQuery = '';
 // ─── Utilidades ─────────────────────────────────────────────────────
 const fmt = n => '$' + n.toLocaleString('es-CO');
 const $ = id => document.getElementById(id);
+const imageUrl = url => /^https?:\/\//i.test(url) ? url : `${API_URL}${url}`;
 const iconosCategoria = {
     comidas: '🍔',
     bebidas: '🥤',
@@ -218,7 +219,7 @@ function buildCard(product) {
     card.dataset.name = product.name.toLowerCase();
 
     const medioVisual = product.imagen_url 
-        ? `<img src="${API_URL}${product.imagen_url}" alt="${product.name}" style="width:100%; height:100%; object-fit:cover;">`
+        ? `<img src="${imageUrl(product.imagen_url)}" alt="${product.name}" style="width:100%; height:100%; object-fit:cover;">`
         : `<div class="product-img-placeholder">${product.emoji}</div>`;
 
     card.innerHTML = `
