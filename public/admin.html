@@ -50,6 +50,16 @@
 
         /* Grillas */
         .orders-grid, .products-grid { display: grid; grid-template-columns: 1fr; gap: 15px; padding-bottom: 30px; }
+        .orders-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .orders-view-toggle { display: flex; flex-wrap: wrap; gap: 8px; }
+        .order-view-btn { padding: 8px 12px; border: 1px solid #EBE4DD; border-radius: 8px; background: var(--white); color: var(--warm-2); font-weight: 800; cursor: pointer; transition: 0.2s; }
+        .order-view-btn:hover { border-color: var(--teal); color: var(--teal-dark); }
+        .order-view-btn.active { border-color: var(--teal); background: var(--teal-light); color: var(--teal-dark); }
+        .order-view-btn[data-view="finalizados"].active { border-color: var(--coral); background: #FFF0F0; color: var(--coral-dark); }
+        .order-view-count { display: inline-flex; min-width: 22px; height: 22px; align-items: center; justify-content: center; padding: 0 6px; margin-left: 4px; border-radius: 12px; background: rgba(61,158,171,0.12); font-size: 0.78rem; }
+        .order-card { overflow: hidden; transition: opacity 0.25s ease, transform 0.25s ease, max-height 0.25s ease, padding 0.25s ease, border-width 0.25s ease; }
+        .order-card.is-removing { opacity: 0; transform: translateY(-8px); max-height: 0 !important; padding-top: 0; padding-bottom: 0; border-width: 0; }
+        .orders-empty { grid-column: 1 / -1; padding: 28px 20px; border: 1px dashed #C9E5E8; border-radius: 14px; background: var(--teal-light); color: var(--teal-dark); text-align: center; font-weight: 800; }
         
         /* Tarjetas Comunes */
         .order-card, .product-card { background: var(--white); border-radius: 16px; padding: 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); border: 1px solid #eee; position: relative; }
@@ -174,7 +184,11 @@
             <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                 <h2 style="margin: 0;">Pedidos Entrantes</h2>
                 
-                <div style="display: flex; gap: 10px; align-items: center;">
+                <div class="orders-toolbar">
+                    <div class="orders-view-toggle" role="group" aria-label="Vista de pedidos">
+                        <button class="order-view-btn active" type="button" data-view="cola" aria-pressed="true" onclick="cambiarVistaPedidos('cola')">🔥 En Cola (<span class="order-view-count" id="pedidos-activos-count">0</span>)</button>
+                        <button class="order-view-btn" type="button" data-view="finalizados" aria-pressed="false" onclick="cambiarVistaPedidos('finalizados')">✅ Finalizados</button>
+                    </div>
                     <select id="filtro-tiempo-pedidos" onchange="cargarPedidos()" style="padding: 8px 12px; border-radius: 8px; border: 1px solid #EBE4DD; font-family: 'Nunito', sans-serif; font-weight: 700; color: var(--teal-dark); background: #FFF; outline: none; cursor: pointer;">
                         <option value="hoy" selected>Solo Hoy</option>
                         <option value="semana">Esta Semana</option>
@@ -307,6 +321,9 @@ const isLocalHost = ['', 'localhost', '127.0.0.1', '::1'].includes(window.locati
 const API_URL = isLocalHost && window.location.port !== '3000' ? 'http://localhost:3000' : '';
 
 let ultimoPedidoId = 0;
+let vistaPedidos = 'cola';
+let solicitudPedidos = 0;
+const pedidosEnActualizacion = new Set();
 const fmt = n => '$' + Number(n).toLocaleString('es-CO');
 const imageUrl = url => /^https?:\/\//i.test(url) ? url : `${API_URL}${url}`;
 
@@ -365,7 +382,9 @@ document.getElementById('btn-close-prod-modal').addEventListener('click', () => 
 
 // ─── LÓGICA DE PEDIDOS ───────────────────────────────────────────────
 async function cargarPedidos() {
+    if (pedidosEnActualizacion.size > 0) return;
     const container = document.getElementById('orders-container');
+    const solicitudActual = ++solicitudPedidos;
     
     // 1. LEEMOS LO QUE DICE EL SELECTOR DE FECHAS EN EL HTML
     const filtroElement = document.getElementById('filtro-tiempo-pedidos');
@@ -374,7 +393,9 @@ async function cargarPedidos() {
     try {
         // 2. LE ENVIAMOS ESE FILTRO AL SERVIDOR EN LA URL (?filtro=...)
         const res = await fetch(`${API_URL}/api/pedidos?filtro=${filtro}`);
+        if (!res.ok) throw new Error('Error obteniendo pedidos');
         const pedidos = await res.json();
+        if (solicitudActual !== solicitudPedidos) return;
         
         // --- LÓGICA DE NOTIFICACIÓN ADMIN ---
         if (pedidos.length > 0) {
@@ -390,14 +411,21 @@ async function cargarPedidos() {
             ultimoPedidoId = maxId;
         }
 
-        container.innerHTML = '';
+        const pedidosActivos = pedidos.filter(p => p.estado === 'Pendiente' || p.estado === 'Preparando' || !p.estado);
+        const pedidosFinalizados = pedidos.filter(p => p.estado === 'Entregado');
+        document.getElementById('pedidos-activos-count').textContent = pedidosActivos.length;
+        const pedidosVisibles = (vistaPedidos === 'cola' ? pedidosActivos : pedidosFinalizados)
+            .sort((a, b) => vistaPedidos === 'cola' ? Number(a.id) - Number(b.id) : Number(b.id) - Number(a.id));
 
-        if(pedidos.length === 0) {
-            container.innerHTML = '<p style="text-align:center; padding: 20px; color:#aaa;">No hay pedidos en esta fecha.</p>';
+        container.innerHTML = '';
+        if (pedidosVisibles.length === 0) {
+            container.innerHTML = vistaPedidos === 'cola'
+                ? '<p class="orders-empty"><i class="fa-solid fa-circle-check"></i> La cocina está al día. No hay pedidos pendientes.</p>'
+                : '<p class="orders-empty">No hay pedidos finalizados en esta fecha.</p>';
             return;
         }
 
-        pedidos.forEach(p => {
+        pedidosVisibles.forEach(p => {
             let badgeClass = 'status-pendiente';
             let btnAction = '';
 
@@ -474,6 +502,7 @@ async function cargarPedidos() {
 
             const card = document.createElement('div');
             card.className = 'order-card';
+            card.dataset.orderId = p.id;
             card.innerHTML = `
                 <div class="status-badge ${badgeClass}">${p.estado || 'Pendiente'}</div>
                 <div class="order-header">
@@ -506,18 +535,65 @@ async function cargarPedidos() {
             container.appendChild(card);
         });
     } catch (error) {
-        container.innerHTML = '<p style="text-align:center;">Error cargando pedidos.</p>';
+        console.error('Error cargando pedidos:', error);
+        if (solicitudActual === solicitudPedidos && !container.children.length) {
+            container.innerHTML = '<p class="orders-empty">No se pudieron cargar los pedidos. Intenta actualizar.</p>';
+        }
     }
 }
 
-async function cambiarEstadoPedido(id, nuevoEstado, boton) {
-    if(boton) boton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-    await fetch(`${API_URL}/api/pedidos/${id}/estado`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado: nuevoEstado })
+function cambiarVistaPedidos(vista) {
+    vistaPedidos = vista;
+    document.querySelectorAll('.order-view-btn').forEach(button => {
+        const isActive = button.dataset.view === vista;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
     });
     cargarPedidos();
+}
+
+async function cambiarEstadoPedido(id, nuevoEstado, boton) {
+    if (pedidosEnActualizacion.has(id)) return;
+    pedidosEnActualizacion.add(id);
+    solicitudPedidos++;
+    const contenidoOriginal = boton ? boton.innerHTML : '';
+    if (boton) {
+        boton.disabled = true;
+        boton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Actualizando';
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/api/pedidos/${id}/estado`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ estado: nuevoEstado })
+        });
+        if (!res.ok) throw new Error('Error actualizando el estado del pedido');
+
+        if (nuevoEstado === 'Entregado' && vistaPedidos === 'cola') {
+            const card = document.querySelector(`.order-card[data-order-id="${id}"]`);
+            if (card) {
+                card.style.maxHeight = `${card.scrollHeight}px`;
+                requestAnimationFrame(() => card.classList.add('is-removing'));
+                await new Promise(resolve => setTimeout(resolve, 260));
+                card.remove();
+            }
+        }
+    } catch (error) {
+        console.error('Error actualizando pedido:', error);
+        if (boton) {
+            boton.disabled = false;
+            boton.innerHTML = contenidoOriginal;
+        }
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'error',
+            title: 'No se pudo actualizar el pedido',
+            showConfirmButton: false, timer: 4000
+        });
+    } finally {
+        pedidosEnActualizacion.delete(id);
+        cargarPedidos();
+    }
 }
 
 // ─── LÓGICA DE PRODUCTOS ──────────────────────────────────────────────
