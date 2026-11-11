@@ -54,7 +54,11 @@
         .orders-view-toggle { display: flex; flex-wrap: wrap; gap: 8px; }
         .order-view-btn { padding: 8px 12px; border: 1px solid #EBE4DD; border-radius: 8px; background: var(--white); color: var(--warm-2); font-weight: 800; cursor: pointer; transition: 0.2s; }
         .order-view-btn:hover { border-color: var(--teal); color: var(--teal-dark); }
+        .order-view-btn:active { transform: scale(0.97); background: var(--teal-light); }
         .order-view-btn.active { border-color: var(--teal); background: var(--teal-light); color: var(--teal-dark); }
+        .order-view-btn[data-view="finalizados"]:hover,
+        .order-view-btn[data-view="finalizados"]:active { border-color: var(--coral); color: var(--coral-dark); }
+        .order-view-btn[data-view="finalizados"]:active { background: #FFF0F0; }
         .order-view-btn[data-view="finalizados"].active { border-color: var(--coral); background: #FFF0F0; color: var(--coral-dark); }
         .order-view-count { display: inline-flex; min-width: 22px; height: 22px; align-items: center; justify-content: center; padding: 0 6px; margin-left: 4px; border-radius: 12px; background: rgba(61,158,171,0.12); font-size: 0.78rem; }
         .order-card { overflow: hidden; transition: opacity 0.25s ease, transform 0.25s ease, max-height 0.25s ease, padding 0.25s ease, border-width 0.25s ease; }
@@ -92,6 +96,7 @@
         .client-info i { color: var(--teal); width: 18px; text-align: center; }
         .order-total { font-size: 1.2rem; font-weight: 900; color: var(--coral); margin-bottom: 15px; text-align: right; }
         .status-badge { position: absolute; top: -10px; left: 20px; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 900; text-transform: uppercase; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .order-card .status-badge { position: relative; top: auto; left: auto; display: table; margin-bottom: 12px; }
         .status-pendiente { background: #FFF3E8; color: #E67E22; border: 1px solid #FAD7A1; }
         .status-preparando { background: var(--teal-light); color: var(--teal-dark); border: 1px solid #A8E0E8; }
         .status-entregado { background: #E8F5E9; color: #2E7D32; border: 1px solid #A5D6A7; }
@@ -324,8 +329,20 @@ let ultimoPedidoId = 0;
 let vistaPedidos = 'cola';
 let solicitudPedidos = 0;
 const pedidosEnActualizacion = new Set();
+let errorPedidosNotificado = false;
+let pedidosEnCarga = false;
+let recargaPedidosPendiente = false;
 const fmt = n => '$' + Number(n).toLocaleString('es-CO');
+const escapeHtml = value => String(value == null ? '' : value).replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[character]));
 const imageUrl = url => /^https?:\/\//i.test(url) ? url : `${API_URL}${url}`;
+
+function fetchConTimeout(url, opciones = {}, tiempo = 10000) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), tiempo);
+    return fetch(url, { ...opciones, signal: controller.signal }).finally(() => clearTimeout(timeout));
+}
 
 // Lógica de navegación entre pestañas
 const tabs = {
@@ -383,6 +400,11 @@ document.getElementById('btn-close-prod-modal').addEventListener('click', () => 
 // ─── LÓGICA DE PEDIDOS ───────────────────────────────────────────────
 async function cargarPedidos() {
     if (pedidosEnActualizacion.size > 0) return;
+    if (pedidosEnCarga) {
+        recargaPedidosPendiente = true;
+        return;
+    }
+    pedidosEnCarga = true;
     const container = document.getElementById('orders-container');
     const solicitudActual = ++solicitudPedidos;
     
@@ -392,10 +414,11 @@ async function cargarPedidos() {
 
     try {
         // 2. LE ENVIAMOS ESE FILTRO AL SERVIDOR EN LA URL (?filtro=...)
-        const res = await fetch(`${API_URL}/api/pedidos?filtro=${filtro}`);
+        const res = await fetchConTimeout(`${API_URL}/api/pedidos?filtro=${filtro}`);
         if (!res.ok) throw new Error('Error obteniendo pedidos');
         const pedidos = await res.json();
         if (solicitudActual !== solicitudPedidos) return;
+        errorPedidosNotificado = false;
         
         // --- LÓGICA DE NOTIFICACIÓN ADMIN ---
         if (pedidos.length > 0) {
@@ -448,22 +471,23 @@ async function cargarPedidos() {
                     <div style="display: flex; align-items: flex-start; gap: 12px; background: #FFF3E8; padding: 10px; border-radius: 8px; border: 1px dashed var(--coral);">
                         <i class="fa-solid fa-utensils" style="color: var(--coral); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
                         <div style="flex: 1; color: var(--coral); font-size: 1rem; line-height: 1.4; font-weight: 800;">
-                            Consumo en el Local: Mesa ${p.mesa}
+                            Consumo en el Local: Mesa ${escapeHtml(p.mesa)}
                         </div>
                     </div>
                 `;
             } else {
-                let direccionLimpia = p.direccion;
+                const direccionPedido = typeof p.direccion === 'string' ? p.direccion : '';
+                let direccionLimpia = escapeHtml(direccionPedido);
                 let btnGoogleMaps = '';
                 
-                if (p.direccion && p.direccion.includes('Ubicación GPS')) {
-                    const match = p.direccion.match(/\(([^)]+)\)/);
-                    if (match) {
-                        const coordenadas = match[1].replace(' ', '');
+                if (direccionPedido.includes('Ubicación GPS')) {
+                    const match = direccionPedido.match(/\(([^)]+)\)/);
+                    const coordenadas = match ? match[1].replace(/\s/g, '') : '';
+                    if (/^-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?$/.test(coordenadas)) {
                         direccionLimpia = '📍 Ubicación enviada por GPS';
                         btnGoogleMaps = `
                             <div style="margin-top: 8px;">
-                                <a href="https://maps.google.com/?q=${coordenadas}" target="_blank" 
+                                <a href="https://maps.google.com/?q=${encodeURIComponent(coordenadas)}" target="_blank" rel="noopener noreferrer"
                                    style="display: inline-flex; align-items: center; gap: 6px; background: var(--teal-light); color: var(--teal-dark); 
                                    text-decoration: none; font-weight: 800; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; border: 1px solid #A8E0E8; transition: 0.2s;">
                                    <i class="fa-solid fa-map-location-dot"></i> Abrir en Maps
@@ -492,7 +516,7 @@ async function cargarPedidos() {
                 p.productos.forEach(prod => {
                     listaProductosHTML += `
                         <div style="display: flex; justify-content: space-between; font-size: 0.95rem; margin-bottom: 5px; color: var(--warm-1);">
-                            <span><strong style="color: var(--teal); font-size: 1.05rem;">${prod.cantidad}x</strong> ${prod.nombre_producto}</span>
+                            <span><strong style="color: var(--teal); font-size: 1.05rem;">${escapeHtml(prod.cantidad)}x</strong> ${escapeHtml(prod.nombre_producto)}</span>
                         </div>`;
                 });
             } else {
@@ -504,28 +528,28 @@ async function cargarPedidos() {
             card.className = 'order-card';
             card.dataset.orderId = p.id;
             card.innerHTML = `
-                <div class="status-badge ${badgeClass}">${p.estado || 'Pendiente'}</div>
+                <div class="status-badge ${badgeClass}">${escapeHtml(p.estado || 'Pendiente')}</div>
                 <div class="order-header">
                     <span class="ticket-num">Ticket #${p.id}</span>
-                    <span class="order-time"><i class="fa-regular fa-clock"></i> ${p.hora_entrega}</span>
+                    <span class="order-time"><i class="fa-regular fa-clock"></i> ${escapeHtml(p.hora_entrega)}</span>
                 </div>
                 
                 <div class="client-info" style="display: flex; flex-direction: column; gap: 10px; background: #F9FAFB; padding: 15px; border-radius: 12px;">
                     <div style="display: flex; align-items: flex-start; gap: 12px;">
                         <i class="fa-regular fa-user" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
-                        <span style="font-weight: 800; color: var(--warm-1); font-size: 1rem;">${p.cliente}</span>
+                        <span style="font-weight: 800; color: var(--warm-1); font-size: 1rem;">${escapeHtml(p.cliente)}</span>
                     </div>
                     
                     ${tipoEntregaHTML}
                     
                     <div style="display: flex; align-items: flex-start; gap: 12px;">
                         <i class="fa-solid fa-money-bill-wave" style="color: var(--teal); margin-top: 3px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
-                        <span style="color: var(--warm-2); font-size: 0.9rem;">Paga con: <strong style="color: var(--warm-1);">${p.metodo_pago}</strong></span>
+                        <span style="color: var(--warm-2); font-size: 0.9rem;">Paga con: <strong style="color: var(--warm-1);">${escapeHtml(p.metodo_pago)}</strong></span>
                     </div>
                     ${p.notas ? `
                     <div style="display: flex; align-items: flex-start; gap: 12px; margin-top: 5px; padding-top: 12px; border-top: 1px dashed #fad7a1;">
                         <i class="fa-solid fa-circle-exclamation" style="color: var(--coral); margin-top: 2px; font-size: 1.1rem; width: 20px; text-align: center;"></i>
-                        <span style="color: var(--coral); font-size: 0.85rem; line-height: 1.4;"><strong>Nota del cliente:</strong> ${p.notas}</span>
+                        <span style="color: var(--coral); font-size: 0.85rem; line-height: 1.4;"><strong>Nota del cliente:</strong> ${escapeHtml(p.notas)}</span>
                     </div>` : ''}
                 </div>
                 ${listaProductosHTML}
@@ -536,8 +560,24 @@ async function cargarPedidos() {
         });
     } catch (error) {
         console.error('Error cargando pedidos:', error);
-        if (solicitudActual === solicitudPedidos && !container.children.length) {
-            container.innerHTML = '<p class="orders-empty">No se pudieron cargar los pedidos. Intenta actualizar.</p>';
+        if (solicitudActual === solicitudPedidos) {
+            if (!container.children.length) {
+                container.innerHTML = '<p class="orders-empty">No se pudieron cargar los pedidos. Intenta actualizar.</p>';
+            }
+            if (!errorPedidosNotificado) {
+                errorPedidosNotificado = true;
+                Swal.fire({
+                    toast: true, position: 'top-end', icon: 'error',
+                    title: 'No se pudieron actualizar los pedidos',
+                    showConfirmButton: false, timer: 5000
+                });
+            }
+        }
+    } finally {
+        pedidosEnCarga = false;
+        if (recargaPedidosPendiente && pedidosEnActualizacion.size === 0) {
+            recargaPedidosPendiente = false;
+            cargarPedidos();
         }
     }
 }
@@ -563,11 +603,11 @@ async function cambiarEstadoPedido(id, nuevoEstado, boton) {
     }
 
     try {
-        const res = await fetch(`${API_URL}/api/pedidos/${id}/estado`, {
+        const res = await fetchConTimeout(`${API_URL}/api/pedidos/${id}/estado`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ estado: nuevoEstado })
-        });
+        }, 15000);
         if (!res.ok) throw new Error('Error actualizando el estado del pedido');
 
         if (nuevoEstado === 'Entregado' && vistaPedidos === 'cola') {
@@ -611,7 +651,7 @@ async function cargarProductosAdmin() {
     const container = document.getElementById('products-container');
     try {
         await cargarCategoriasAdmin();
-        const res = await fetch(`${API_URL}/api/productos?admin=true`);
+        const res = await fetchConTimeout(`${API_URL}/api/productos?admin=true`);
         if (!res.ok) throw new Error('Error obteniendo productos');
         const productos = await res.json();
         container.innerHTML = '';
@@ -620,7 +660,7 @@ async function cargarProductosAdmin() {
             const icono = iconosCategoria[p.categoria] || '📦';
 
             const visualizacionMedia = p.imagen_url 
-                ? `<img src="${imageUrl(p.imagen_url)}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;">`
+                ? `<img src="${escapeHtml(imageUrl(p.imagen_url))}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;">`
                 : icono;
 
             const card = document.createElement('div');
@@ -629,24 +669,37 @@ async function cargarProductosAdmin() {
                 <div class="prod-info-wrapper">
                     <div class="prod-emoji-box">${visualizacionMedia}</div>
                     <div class="prod-details">
-                        <h4>${p.nombre}</h4>
-                        <p>${p.descripcion}</p>
+                    <h4>${escapeHtml(p.nombre)}</h4>
+                    <p>${escapeHtml(p.descripcion)}</p>
                         <span>${fmt(p.precio)}</span>
                     </div>
                 </div>
                 <div class="prod-actions" style="flex-direction: row; align-items: center;">
                     <label class="switch" title="Disponibilidad" style="margin-right: 10px;">
-                        <input type="checkbox" ${p.disponible ? 'checked' : ''} onchange="cambiarDisponibilidad(${p.id}, this.checked)">
+                        <input type="checkbox" ${p.disponible ? 'checked' : ''}>
                         <span class="slider"></span>
                     </label>
-                    <button class="btn-edit" onclick="abrirModalEdicion(${p.id}, '${p.nombre}', '${p.descripcion}', ${p.precio}, '${p.categoria}')" title="Editar"><i class="fa-regular fa-pen-to-square"></i></button>
-                    <button class="btn-delete" onclick="eliminarProducto(${p.id}, '${p.nombre}')" title="Eliminar"><i class="fa-regular fa-trash-can"></i></button>
+                    <button class="btn-edit" type="button" title="Editar"><i class="fa-regular fa-pen-to-square"></i></button>
+                    <button class="btn-delete" type="button" title="Eliminar"><i class="fa-regular fa-trash-can"></i></button>
                 </div>
             `;
+            card.querySelector('.switch input').addEventListener('change', event => {
+                cambiarDisponibilidad(p.id, event.currentTarget.checked, event.currentTarget);
+            });
+            card.querySelector('.btn-edit').addEventListener('click', () => {
+                abrirModalEdicion(p.id, p.nombre || '', p.descripcion || '', p.precio, p.categoria || '');
+            });
+            card.querySelector('.btn-delete').addEventListener('click', () => eliminarProducto(p.id, p.nombre || ''));
             container.appendChild(card);
         });
     } catch (error) {
+        console.error('Error cargando productos:', error);
         container.innerHTML = '<p>Error al cargar productos.</p>';
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'error',
+            title: 'No se pudo cargar el menú',
+            showConfirmButton: false, timer: 5000
+        });
     }
 }
 
@@ -654,7 +707,7 @@ async function cargarCategoriasAdmin() {
         const container = document.getElementById('categories-container');
         const select = document.getElementById('prod-cat');
         try {
-            const res = await fetch(`${API_URL}/api/categorias?admin=true`);
+            const res = await fetchConTimeout(`${API_URL}/api/categorias?admin=true`);
             if (!res.ok) throw new Error('Error obteniendo categorías');
             const categorias = await res.json();
 
@@ -747,7 +800,7 @@ async function guardarCategoria(slug, nameInput, visibilityInput) {
         }
 
         try {
-            const res = await fetch(`${API_URL}/api/categorias/${encodeURIComponent(slug)}`, {
+            const res = await fetchConTimeout(`${API_URL}/api/categorias/${encodeURIComponent(slug)}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ nombre, disponible: visibilityInput.checked })
@@ -777,7 +830,7 @@ async function crearCategoria() {
         if (!nombre || !nombre.trim()) return;
 
         try {
-            const res = await fetch(`${API_URL}/api/categorias`, {
+            const res = await fetchConTimeout(`${API_URL}/api/categorias`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ nombre })
@@ -805,7 +858,7 @@ async function eliminarCategoria(slug, nombre) {
         if (!confirmacion.isConfirmed) return;
 
         try {
-            const res = await fetch(`${API_URL}/api/categorias/${encodeURIComponent(slug)}`, { method: 'DELETE' });
+            const res = await fetchConTimeout(`${API_URL}/api/categorias/${encodeURIComponent(slug)}`, { method: 'DELETE' });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'No se pudo eliminar la categoría');
             await cargarCategoriasAdmin();
@@ -816,13 +869,24 @@ async function eliminarCategoria(slug, nombre) {
     }
 }
 
-async function cambiarDisponibilidad(id, estaChequeado) {
+async function cambiarDisponibilidad(id, estaChequeado, checkbox) {
     const disponible = estaChequeado ? 1 : 0;
-    await fetch(`${API_URL}/api/productos/${id}/disponibilidad`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disponible })
-    });
+    try {
+        const res = await fetchConTimeout(`${API_URL}/api/productos/${id}/disponibilidad`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ disponible })
+        });
+        if (!res.ok) throw new Error('No se pudo actualizar la disponibilidad');
+    } catch (error) {
+        console.error('Error actualizando disponibilidad del producto:', error);
+        if (checkbox) checkbox.checked = !estaChequeado;
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'error',
+            title: 'No se pudo actualizar el producto',
+            showConfirmButton: false, timer: 4000
+        });
+    }
 }
 
 function eliminarProducto(id, nombre) {
@@ -839,9 +903,15 @@ function eliminarProducto(id, nombre) {
         color: '#2A1F1A'
     }).then(async (result) => {
         if (result.isConfirmed) {
-            await fetch(`${API_URL}/api/productos/${id}`, { method: 'DELETE' });
-            Swal.fire({ title: '¡Eliminado!', text: 'El producto ha sido borrado.', icon: 'success', confirmButtonColor: '#3D9EAB' });
-            cargarProductosAdmin();
+            try {
+                const res = await fetchConTimeout(`${API_URL}/api/productos/${id}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error('No se pudo eliminar el producto');
+                Swal.fire({ title: '¡Eliminado!', text: 'El producto ha sido borrado.', icon: 'success', confirmButtonColor: '#3D9EAB' });
+                cargarProductosAdmin();
+            } catch (error) {
+                console.error('Error eliminando producto:', error);
+                Swal.fire('No se pudo eliminar', 'Intenta de nuevo cuando el servidor esté disponible.', 'error');
+            }
         }
     });
 }
@@ -870,9 +940,9 @@ document.getElementById('product-form').addEventListener('submit', async (e) => 
     try {
         let res;
         if (idProducto) {
-            res = await fetch(`${API_URL}/api/productos/${idProducto}`, { method: 'PUT', body: formData });
+            res = await fetchConTimeout(`${API_URL}/api/productos/${idProducto}`, { method: 'PUT', body: formData }, 30000);
         } else {
-            res = await fetch(`${API_URL}/api/productos`, { method: 'POST', body: formData });
+            res = await fetchConTimeout(`${API_URL}/api/productos`, { method: 'POST', body: formData }, 30000);
         }
 
         // Si el backend da un error, frenamos aquí
@@ -902,7 +972,8 @@ async function cargarReportes() {
     const filtro = filtroElement ? filtroElement.value : 'mes';
 
     try {
-        const res = await fetch(`${API_URL}/api/reportes?filtro=${filtro}`);
+        const res = await fetchConTimeout(`${API_URL}/api/reportes?filtro=${filtro}`);
+        if (!res.ok) throw new Error('Error obteniendo los reportes');
         const data = await res.json();
         
         const ingresos = data.totales.ingresos_totales || 0;
@@ -925,7 +996,7 @@ async function cargarReportes() {
                     <div class="top-item">
                         <div class="top-name">
                             <span>${medallas[index] || '🔹'}</span> 
-                            ${prod.nombre_producto}
+                            ${escapeHtml(prod.nombre_producto)}
                         </div>
                         <div class="top-qty">${prod.total_vendido} vendidos</div>
                     </div>
@@ -934,6 +1005,11 @@ async function cargarReportes() {
         }
     } catch (error) {
         console.error("Error cargando reportes:", error);
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'error',
+            title: 'No se pudieron actualizar los reportes',
+            showConfirmButton: false, timer: 5000
+        });
     }
 }
 
@@ -941,7 +1017,8 @@ async function cargarReportes() {
 async function cargarMesasAdmin() {
     const container = document.getElementById('mesas-container');
     try {
-        const res = await fetch(`${API_URL}/api/mesas?admin=true`);
+        const res = await fetchConTimeout(`${API_URL}/api/mesas?admin=true`);
+        if (!res.ok) throw new Error('Error obteniendo las mesas');
         const mesas = await res.json();
         container.innerHTML = '';
         
@@ -954,7 +1031,7 @@ async function cargarMesasAdmin() {
                     </div>
                     <div style="display: flex; gap: 10px; align-items: center;">
                         <label class="switch">
-                            <input type="checkbox" ${m.disponible ? 'checked' : ''} onchange="cambiarDisponibilidadMesa(${m.id}, this.checked)">
+                            <input type="checkbox" ${m.disponible ? 'checked' : ''} onchange="cambiarDisponibilidadMesa(${m.id}, this.checked, this)">
                             <span class="slider"></span>
                         </label>
                         <button class="btn-delete" onclick="eliminarMesa(${m.id}, '${m.numero}')"><i class="fa-regular fa-trash-can"></i></button>
@@ -962,7 +1039,15 @@ async function cargarMesasAdmin() {
                 </div>
             `;
         });
-    } catch(e) { container.innerHTML = '<p>Error cargando mesas</p>'; }
+    } catch(error) {
+        console.error('Error cargando mesas:', error);
+        container.innerHTML = '<p>Error cargando mesas. Intenta actualizar.</p>';
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'error',
+            title: 'No se pudieron cargar las mesas',
+            showConfirmButton: false, timer: 5000
+        });
+    }
 }
 
 async function crearMesa() {
@@ -971,25 +1056,48 @@ async function crearMesa() {
         showCancelButton: true, confirmButtonColor: '#3D9EAB', cancelButtonText: 'Cancelar'
     });
     if (numero) {
-        await fetch(`${API_URL}/api/mesas`, {
+        try {
+            const res = await fetchConTimeout(`${API_URL}/api/mesas`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ numero })
-        });
-        cargarMesasAdmin();
+            });
+            if (!res.ok) throw new Error('No se pudo crear la mesa');
+            cargarMesasAdmin();
+        } catch (error) {
+            console.error('Error creando mesa:', error);
+            Swal.fire('No se pudo crear la mesa', 'Intenta de nuevo cuando el servidor esté disponible.', 'error');
+        }
     }
 }
 
-async function cambiarDisponibilidadMesa(id, checked) {
-    await fetch(`${API_URL}/api/mesas/${id}/disponibilidad`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disponible: checked ? 1 : 0 })
-    });
+async function cambiarDisponibilidadMesa(id, checked, checkbox) {
+    try {
+        const res = await fetchConTimeout(`${API_URL}/api/mesas/${id}/disponibilidad`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ disponible: checked ? 1 : 0 })
+        });
+        if (!res.ok) throw new Error('No se pudo actualizar la disponibilidad de la mesa');
+    } catch (error) {
+        console.error('Error actualizando disponibilidad de mesa:', error);
+        if (checkbox) checkbox.checked = !checked;
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'error',
+            title: 'No se pudo actualizar la mesa',
+            showConfirmButton: false, timer: 4000
+        });
+    }
 }
 
 async function eliminarMesa(id, numero) {
     if(confirm(`¿Eliminar la Mesa ${numero}?`)) {
-        await fetch(`${API_URL}/api/mesas/${id}`, { method: 'DELETE' });
-        cargarMesasAdmin();
+        try {
+            const res = await fetchConTimeout(`${API_URL}/api/mesas/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('No se pudo eliminar la mesa');
+            cargarMesasAdmin();
+        } catch (error) {
+            console.error('Error eliminando mesa:', error);
+            Swal.fire('No se pudo eliminar la mesa', 'Intenta de nuevo cuando el servidor esté disponible.', 'error');
+        }
     }
 }
 

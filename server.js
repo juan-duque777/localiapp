@@ -234,6 +234,14 @@ app.get('/api/productos', (req, res) => {
 // 2. Crear nuevo producto (Soporta imagen)
 app.post('/api/productos', upload.single('imagen'), async (req, res) => {
     const { nombre, descripcion, precio, categoria } = req.body;
+    const nombreLimpio = typeof nombre === 'string' ? nombre.trim() : '';
+    const descripcionLimpia = typeof descripcion === 'string' ? descripcion.trim() : '';
+    const categoriaLimpia = typeof categoria === 'string' ? categoria.trim() : '';
+    const precioNumerico = typeof precio === 'string' && precio.trim() ? Number(precio) : NaN;
+    if (!nombreLimpio || !categoriaLimpia || !Number.isFinite(precioNumerico) || precioNumerico < 0) {
+        return res.status(400).json({ error: 'Nombre, categoría y precio válido son obligatorios' });
+    }
+
     let imagen_url;
     try {
         imagen_url = await guardarImagen(req.file);
@@ -244,7 +252,7 @@ app.post('/api/productos', upload.single('imagen'), async (req, res) => {
     
     const sql = `INSERT INTO productos (nombre, descripcion, precio, categoria, disponible, imagen_url) VALUES (?, ?, ?, ?, 1, ?)`;
     
-    db.query(sql, [nombre, descripcion, precio, categoria, imagen_url], (err, result) => {
+    db.query(sql, [nombreLimpio, descripcionLimpia, precioNumerico, categoriaLimpia, imagen_url], (err, result) => {
         if (err) return res.status(500).json({ error: 'Error al crear producto' });
         res.status(201).json({ mensaje: 'Producto creado exitosamente' });
     });
@@ -254,9 +262,16 @@ app.post('/api/productos', upload.single('imagen'), async (req, res) => {
 app.put('/api/productos/:id', upload.single('imagen'), async (req, res) => {
     const productoId = req.params.id;
     const { nombre, descripcion, precio, categoria } = req.body;
+    const nombreLimpio = typeof nombre === 'string' ? nombre.trim() : '';
+    const descripcionLimpia = typeof descripcion === 'string' ? descripcion.trim() : '';
+    const categoriaLimpia = typeof categoria === 'string' ? categoria.trim() : '';
+    const precioNumerico = typeof precio === 'string' && precio.trim() ? Number(precio) : NaN;
+    if (!nombreLimpio || !categoriaLimpia || !Number.isFinite(precioNumerico) || precioNumerico < 0) {
+        return res.status(400).json({ error: 'Nombre, categoría y precio válido son obligatorios' });
+    }
     
     let sql = `UPDATE productos SET nombre = ?, descripcion = ?, precio = ?, categoria = ? WHERE id = ?`;
-    let params = [nombre, descripcion, precio, categoria, productoId];
+    let params = [nombreLimpio, descripcionLimpia, precioNumerico, categoriaLimpia, productoId];
     
     if (req.file) {
         let imagen_url;
@@ -267,7 +282,7 @@ app.put('/api/productos/:id', upload.single('imagen'), async (req, res) => {
             return res.status(process.env.RENDER && !useCloudinary ? 503 : 502).json({ error: err.message });
         }
         sql = `UPDATE productos SET nombre = ?, descripcion = ?, precio = ?, categoria = ?, imagen_url = ? WHERE id = ?`;
-        params = [nombre, descripcion, precio, categoria, imagen_url, productoId];
+        params = [nombreLimpio, descripcionLimpia, precioNumerico, categoriaLimpia, imagen_url, productoId];
     }
     
     db.query(sql, params, (err, result) => {
@@ -399,30 +414,86 @@ app.get('/api/pedidos', (req, res) => {
 app.post('/api/pedidos', (req, res) => {
     // NUEVO: Recibimos tipo_pedido y mesa
     const { cliente, direccion, hora_entrega, metodo_pago, notas, total, productos, tipo_pedido, mesa } = req.body;
-    
+    const clienteLimpio = typeof cliente === 'string' ? cliente.trim() : '';
+    const direccionLimpia = typeof direccion === 'string' ? direccion.trim() : '';
+    const horaEntregaLimpia = typeof hora_entrega === 'string' ? hora_entrega.trim() : '';
+    const metodoPagoLimpio = typeof metodo_pago === 'string' ? metodo_pago.trim() : '';
+    const notasLimpias = typeof notas === 'string' ? notas.trim() : '';
+    const tipoPedidoLimpio = typeof tipo_pedido === 'string' ? tipo_pedido.trim() : '';
+    const mesaLimpia = typeof mesa === 'string' || typeof mesa === 'number' ? String(mesa).trim() : '';
+    const numeroSeguro = valor =>
+        typeof valor === 'number' || (typeof valor === 'string' && valor.trim() !== '')
+            ? Number(valor)
+            : NaN;
+    const totalNumerico = numeroSeguro(total);
+    if (!clienteLimpio || !horaEntregaLimpia || !metodoPagoLimpio ||
+        !['Domicilio', 'En mesa'].includes(tipoPedidoLimpio) ||
+        (tipoPedidoLimpio === 'Domicilio' && !direccionLimpia) ||
+        (tipoPedidoLimpio === 'En mesa' && !mesaLimpia) ||
+        !Number.isFinite(totalNumerico) || totalNumerico < 0 ||
+        !Array.isArray(productos) || productos.length === 0) {
+        return res.status(400).json({ error: 'Completa los datos obligatorios del pedido' });
+    }
+
+    const productosLimpios = productos.map(producto => {
+        const id = numeroSeguro(producto && producto.id);
+        const nombre = typeof (producto && producto.nombre) === 'string' ? producto.nombre.trim() : '';
+        const cantidad = numeroSeguro(producto && producto.cantidad);
+        const subtotal = numeroSeguro(producto && producto.subtotal);
+        return { id, nombre, cantidad, subtotal };
+    });
+    if (productosLimpios.some(producto =>
+        !Number.isInteger(producto.id) || producto.id <= 0 ||
+        !producto.nombre ||
+        !Number.isInteger(producto.cantidad) || producto.cantidad <= 0 ||
+        !Number.isFinite(producto.subtotal) || producto.subtotal < 0
+    )) {
+        return res.status(400).json({ error: 'El detalle del pedido contiene productos inválidos' });
+    }
+
     const sqlPedido = `INSERT INTO pedidos (cliente, direccion, hora_entrega, metodo_pago, notas, total, tipo_pedido, mesa) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-    db.query(sqlPedido, [cliente, direccion, hora_entrega, metodo_pago, notas, total, tipo_pedido, mesa], (err, result) => {
-        if (err) return res.status(500).json({ error: 'Error al procesar el pedido principal' });
+    const datosPedido = [
+        clienteLimpio,
+        tipoPedidoLimpio === 'En mesa' ? 'Consumo en el local' : direccionLimpia,
+        horaEntregaLimpia,
+        metodoPagoLimpio,
+        notasLimpias,
+        totalNumerico,
+        tipoPedidoLimpio,
+        tipoPedidoLimpio === 'En mesa' ? mesaLimpia : null
+    ];
+    db.query(sqlPedido, datosPedido, (pedidoError, result) => {
+        if (pedidoError) return res.status(500).json({ error: 'Error al procesar el pedido principal' });
 
-        const pedidoId = result.insertId; 
+        const pedidoId = result.insertId;
+        const valoresDetalle = productosLimpios.map(producto => [
+            pedidoId, producto.id, producto.nombre, producto.cantidad, producto.subtotal
+        ]);
         const sqlDetalle = `INSERT INTO detalle_pedidos (pedido_id, producto_id, nombre_producto, cantidad, subtotal) VALUES ?`;
-        const valoresDetalle = productos.map(p => [pedidoId, p.id, p.nombre, p.cantidad, p.subtotal]);
-
-        db.query(sqlDetalle, [valoresDetalle], (err2, result2) => {
-            if (err2) return res.status(500).json({ error: 'Error al guardar el detalle del pedido' });
-            res.status(200).json({ mensaje: '¡Pedido guardado con éxito!', pedido_id: pedidoId });
+        db.query(sqlDetalle, [valoresDetalle], detalleError => {
+            if (detalleError) {
+                return db.query('DELETE FROM pedidos WHERE id = ?', [pedidoId], cleanupError => {
+                    if (cleanupError) console.error('Error limpiando pedido sin detalle:', cleanupError);
+                    res.status(500).json({ error: 'Error al guardar el detalle del pedido' });
+                });
+            }
+            res.status(201).json({ mensaje: '¡Pedido guardado con éxito!', pedido_id: pedidoId });
         });
     });
 });
 
 // 3. Actualizar el estado de un pedido (Botones Preparar/Entregar)
 app.put('/api/pedidos/:id/estado', (req, res) => {
-    const pedidoId = req.params.id;
+    const pedidoId = Number(req.params.id);
     const { estado } = req.body;
+    if (!Number.isInteger(pedidoId) || pedidoId <= 0 || !['Pendiente', 'Preparando', 'Entregado'].includes(estado)) {
+        return res.status(400).json({ error: 'Pedido o estado inválido' });
+    }
 
     const sql = `UPDATE pedidos SET estado = ? WHERE id = ?`;
     db.query(sql, [estado, pedidoId], (err, result) => {
         if (err) return res.status(500).json({ error: 'Error actualizando estado' });
+        if (result.affectedRows === 0) return res.status(404).json({ error: 'Pedido no encontrado' });
         res.json({ mensaje: 'Estado actualizado correctamente' });
     });
 });
@@ -431,7 +502,8 @@ app.put('/api/pedidos/:id/estado', (req, res) => {
 app.get('/api/pedidos/:id', (req, res) => {
     const sql = `SELECT estado FROM pedidos WHERE id = ?`;
     db.query(sql, [req.params.id], (err, result) => {
-        if (err || result.length === 0) return res.status(404).json({ error: 'Pedido no encontrado' });
+        if (err) return res.status(500).json({ error: 'Error consultando el estado del pedido' });
+        if (result.length === 0) return res.status(404).json({ error: 'Pedido no encontrado' });
         res.json(result[0]);
     });
 });

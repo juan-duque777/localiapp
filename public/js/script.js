@@ -13,6 +13,18 @@ let currentQuery = '';
 const fmt = n => '$' + n.toLocaleString('es-CO');
 const $ = id => document.getElementById(id);
 const imageUrl = url => /^https?:\/\//i.test(url) ? url : `${API_URL}${url}`;
+const escapeHtml = value => String(value == null ? '' : value).replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[character]));
+let errorRadarNotificado = false;
+let consultandoEstadoPedido = false;
+
+function fetchConTimeout(url, opciones = {}, tiempo = 10000) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), tiempo);
+    return fetch(url, { ...opciones, signal: controller.signal }).finally(() => clearTimeout(timeout));
+}
+
 const iconosCategoria = {
     comidas: '🍔',
     bebidas: '🥤',
@@ -56,7 +68,7 @@ function seleccionarCategoria(button) {
 }
 
 async function cargarCategoriasCliente() {
-    const response = await fetch(`${API_URL}/api/categorias`);
+    const response = await fetchConTimeout(`${API_URL}/api/categorias`);
     if (!response.ok) {
         const detalle = await response.text();
         throw new Error(`No se pudieron cargar las categorías (HTTP ${response.status}): ${detalle}`);
@@ -76,7 +88,7 @@ function totalPrice() {
 // ─── Conexión al Backend ─────────────────────────────────────────────
 async function cargarProductosDesdeBD() {
     try {
-        const respuesta = await fetch(`${API_URL}/api/productos`);
+        const respuesta = await fetchConTimeout(`${API_URL}/api/productos`);
         if (!respuesta.ok) {
             const detalle = await respuesta.text();
             throw new Error(`No se pudieron cargar los productos (HTTP ${respuesta.status}): ${detalle}`);
@@ -152,13 +164,19 @@ async function cargarMesasCliente() {
     const selectMesa = document.getElementById('select-mesa');
     if(!selectMesa) return;
     try {
-        const res = await fetch(`${API_URL}/api/mesas`);
+        const res = await fetchConTimeout(`${API_URL}/api/mesas`);
+        if (!res.ok) throw new Error('Error cargando mesas');
         const mesas = await res.json();
         selectMesa.innerHTML = '<option value="" disabled selected>Selecciona tu mesa...</option>';
         mesas.forEach(m => {
-            selectMesa.innerHTML += `<option value="${m.numero}">Mesa ${m.numero}</option>`;
+            const option = document.createElement('option');
+            option.value = m.numero;
+            option.textContent = `Mesa ${m.numero}`;
+            selectMesa.appendChild(option);
         });
-    } catch(e) { console.log('Error cargando mesas'); }
+    } catch(error) {
+        selectMesa.innerHTML = '<option value="" disabled selected>No se pudieron cargar las mesas</option>';
+    }
 }
 
 function setTipoPedido(tipo) {
@@ -226,7 +244,7 @@ function buildCard(product) {
     card.dataset.name = product.name.toLowerCase();
 
     const medioVisual = product.imagen_url 
-        ? `<img src="${imageUrl(product.imagen_url)}" alt="${product.name}" style="width:100%; height:100%; object-fit:cover;">`
+        ? `<img src="${escapeHtml(imageUrl(product.imagen_url))}" alt="${escapeHtml(product.name)}" style="width:100%; height:100%; object-fit:cover;">`
         : `<div class="product-img-placeholder">${product.emoji}</div>`;
 
     card.innerHTML = `
@@ -235,12 +253,12 @@ function buildCard(product) {
         </div>
         <div class="product-info">
             <div>
-                <h3 class="product-name">${product.name}</h3>
-                <p class="product-desc">${product.desc}</p>
+                <h3 class="product-name">${escapeHtml(product.name)}</h3>
+                <p class="product-desc">${escapeHtml(product.desc)}</p>
             </div>
             <div class="price-row" data-id="${product.id}">
                 <span class="price">${fmt(product.price)}</span>
-                <button class="add-btn" onclick="addToCart(${product.id})" aria-label="Agregar ${product.name} al carrito">+</button>
+                <button class="add-btn" onclick="addToCart(${product.id})" aria-label="Agregar ${escapeHtml(product.name)} al carrito">+</button>
             </div>
         </div>
     `;
@@ -317,7 +335,7 @@ function openCheckoutModal() {
         div.className = 'checkout-item';
         div.innerHTML = `
             <div class="item-details">
-                <h4>${item.qty}x ${item.product.name}</h4>
+                <h4>${escapeHtml(item.qty)}x ${escapeHtml(item.product.name)}</h4>
                 <p>${fmt(item.product.price)} c/u</p>
             </div>
             <div class="item-price">${fmt(item.product.price * item.qty)}</div>
@@ -432,12 +450,18 @@ if(checkoutForm) {
         btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...';
         btnSubmit.disabled = true;
 
-        fetch(`${API_URL}/api/pedidos`, {
+        fetchConTimeout(`${API_URL}/api/pedidos`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(pedidoFinal)
+        }, 30000)
+        .then(async response => {
+            const data = await response.json();
+            if (!response.ok || !data.pedido_id) {
+                throw new Error(data.error || 'No se pudo confirmar el pedido');
+            }
+            return data;
         })
-        .then(response => response.json())
         .then(data => {
             closeCheckoutModal();
 
@@ -602,12 +626,14 @@ setInterval(async () => {
     const miTicket = localStorage.getItem('localiapp_ticket');
     const miEstadoViejo = localStorage.getItem('localiapp_estado');
     
-    if(!miTicket) return; 
+    if (!miTicket || consultandoEstadoPedido) return;
+    consultandoEstadoPedido = true;
 
     try {
-        const res = await fetch(`${API_URL}/api/pedidos/${miTicket}`);
-        if (!res.ok) return;
+        const res = await fetchConTimeout(`${API_URL}/api/pedidos/${miTicket}`, {}, 8000);
+        if (!res.ok) throw new Error('No se pudo consultar el estado del pedido');
         const data = await res.json();
+        errorRadarNotificado = false;
         
         if(data.estado && data.estado !== miEstadoViejo) {
             localStorage.setItem('localiapp_estado', data.estado); 
@@ -627,7 +653,19 @@ setInterval(async () => {
                 localStorage.removeItem('localiapp_ticket');
             }
         }
-    } catch(e) { console.log('Buscando actualizaciones...'); }
+    } catch(error) {
+        if (!errorRadarNotificado) {
+            errorRadarNotificado = true;
+            Swal.fire({
+                toast: true, position: 'top-end', icon: 'warning',
+                title: 'No se pudo consultar el estado del pedido',
+                text: 'Seguiremos intentando actualizarlo.',
+                showConfirmButton: false, timer: 5000
+            });
+        }
+    } finally {
+        consultandoEstadoPedido = false;
+    }
 }, 5000);
 
 // ══════════════════════════════════════════════════════════════════════
@@ -673,7 +711,8 @@ async function abrirMisPedidos() {
     
     try {
         // En tu app los pedidos se guardan actualmente bajo "Usuario de Google"
-        const res = await fetch(`${API_URL}/api/mis-pedidos/Usuario de Google`);
+        const res = await fetchConTimeout(`${API_URL}/api/mis-pedidos/Usuario de Google`);
+        if (!res.ok) throw new Error('Error consultando los pedidos');
         const pedidos = await res.json();
         
         misPedidosContainer.innerHTML = '';
@@ -694,17 +733,17 @@ async function abrirMisPedidos() {
             if(p.estado === 'Preparando') { badgeClass = 'status-preparando'; iconClass = 'fa-fire-burner'; }
             if(p.estado === 'Entregado') { badgeClass = 'status-entregado'; iconClass = 'fa-check-double'; }
             
-            let detalleTexto = p.productos ? p.productos.map(prod => `<strong>${prod.cantidad}x</strong> ${prod.nombre_producto}`).join(', ') : 'Varios productos...';
+            let detalleTexto = p.productos ? p.productos.map(prod => `<strong>${escapeHtml(prod.cantidad)}x</strong> ${escapeHtml(prod.nombre_producto)}`).join(', ') : 'Varios productos...';
             
             const card = document.createElement('div');
             card.style.cssText = 'background: white; border: 1px solid #eee; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);';
             card.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px dashed #eee; padding-bottom: 10px;">
                     <span style="font-weight: 800; color: var(--warm-1); font-size: 1.1rem;">Ticket #${p.id}</span>
-                    <span class="status-badge ${badgeClass}" style="font-size: 0.75rem;"><i class="fa-solid ${iconClass}"></i> ${p.estado || 'Pendiente'}</span>
+                    <span class="status-badge ${badgeClass}" style="font-size: 0.75rem;"><i class="fa-solid ${iconClass}"></i> ${escapeHtml(p.estado || 'Pendiente')}</span>
                 </div>
                 <div style="font-size: 0.85rem; color: var(--warm-2); margin-bottom: 12px; line-height: 1.5;">
-                    <p style="margin: 0 0 5px 0;"><i class="fa-regular fa-calendar"></i> ${p.hora_entrega} • ${p.tipo_pedido === 'Domicilio' ? '🛵 Domicilio' : '🍽️ Mesa'}</p>
+                    <p style="margin: 0 0 5px 0;"><i class="fa-regular fa-calendar"></i> ${escapeHtml(p.hora_entrega)} • ${p.tipo_pedido === 'Domicilio' ? '🛵 Domicilio' : '🍽️ Mesa'}</p>
                     <p style="margin: 0; color: var(--teal);">${detalleTexto}</p>
                 </div>
                 <div style="font-weight: 900; font-size: 1.2rem; color: var(--warm-1); text-align: left;">
@@ -723,6 +762,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         await cargarCategoriasCliente();
     } catch (error) {
         console.error('Error cargando categorías:', error);
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'warning',
+            title: 'No se pudieron cargar las categorías',
+            showConfirmButton: false, timer: 5000
+        });
     }
     await cargarProductosDesdeBD();
 });
