@@ -739,15 +739,9 @@ body {
 .auth-section p { color: var(--warm-2); font-size: 0.85rem; margin-bottom: 15px; }
 
 .google-btn {
-    background: var(--white); border: 1px solid #DADCE0;
-    padding: 12px 20px; border-radius: 12px; font-family: var(--font);
-    font-weight: 800; font-size: 0.95rem; color: #3C4043; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-    width: 100%; box-shadow: var(--shadow-sm); transition: all 0.2s var(--ease);
+    display: flex; justify-content: center; width: 100%;
 }
-.google-btn img { width: 20px; }
-.google-btn:hover { background: #F8F9FA; transform: translateY(-2px); box-shadow: var(--shadow-md); }
-.google-btn:active { transform: translateY(0); }
+.google-btn iframe { max-width: 100%; }
 
 /* Input de Ubicación con botón al lado */
 .location-input-wrapper { display: flex; gap: 8px; }

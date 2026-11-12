@@ -6,8 +6,61 @@ const path = require('path');
 const multer = require('multer');
 const { Readable } = require('stream');
 const cloudinary = require('cloudinary').v2;
+const { OAuth2Client } = require('google-auth-library');
+const jwt = require('jsonwebtoken');
 
 const fs = require('fs');
+
+const googleClient = new OAuth2Client();
+const jwtIssuer = 'localiapp-api';
+const jwtAudience = 'localiapp-client';
+const jwtLifetime = '12h';
+
+function getJwtSecret() {
+    const secret = process.env.JWT_SECRET;
+    return typeof secret === 'string' && secret.length >= 32 ? secret : null;
+}
+
+function verificarToken(req, res, next) {
+    const authorization = req.get('authorization') || '';
+    const match = authorization.match(/^Bearer\s+(.+)$/i);
+    const secret = getJwtSecret();
+    if (!secret) return res.status(503).json({ error: 'La autenticación no está configurada' });
+    if (!match) return res.status(401).json({ error: 'Autenticación requerida' });
+
+    try {
+        const claims = jwt.verify(match[1], secret, {
+            algorithms: ['HS256'],
+            issuer: jwtIssuer,
+            audience: jwtAudience
+        });
+        if (!claims || typeof claims !== 'object' ||
+            typeof claims.email !== 'string' || typeof claims.name !== 'string') {
+            return res.status(401).json({ error: 'Token inválido' });
+        }
+        req.user = claims;
+        next();
+    } catch (error) {
+        return res.status(401).json({ error: 'Token inválido o expirado' });
+    }
+}
+
+function verificarAdmin(req, res, next) {
+    const adminEmail = process.env.ADMIN_EMAIL || '';
+    if (!adminEmail) return res.status(503).json({ error: 'El acceso administrativo no está configurado' });
+
+    verificarToken(req, res, () => {
+        if (req.user.email !== adminEmail) {
+            return res.status(403).json({ error: 'Acceso denegado: se requieren permisos de administrador' });
+        }
+        next();
+    });
+}
+
+function verificarTokenOpcional(req, res, next) {
+    if (!req.get('authorization')) return next();
+    verificarToken(req, res, next);
+}
 
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, 'public', 'uploads'));
 const cloudinaryVariables = ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
@@ -89,6 +142,60 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+app.get('/api/config', (req, res) => {
+    res.json({ googleClientId: process.env.GOOGLE_CLIENT_ID || '' });
+});
+
+app.post('/api/auth/google', async (req, res) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const secret = getJwtSecret();
+    const credential = req.body && req.body.credential;
+    if (!clientId || !secret) {
+        return res.status(503).json({ error: 'La autenticación de Google no está configurada' });
+    }
+    if (typeof credential !== 'string' || credential.length === 0 || credential.length > 10000) {
+        return res.status(400).json({ error: 'Credencial de Google inválida' });
+    }
+
+    try {
+        const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: clientId });
+        const payload = ticket.getPayload();
+        if (!payload || !payload.sub || !payload.email || payload.email_verified !== true) {
+            return res.status(401).json({ error: 'La cuenta de Google no está verificada' });
+        }
+
+        const user = {
+            email: payload.email,
+            name: payload.name || payload.email,
+            picture: payload.picture || ''
+        };
+        const token = jwt.sign(user, secret, {
+            algorithm: 'HS256',
+            expiresIn: jwtLifetime,
+            issuer: jwtIssuer,
+            audience: jwtAudience,
+            subject: payload.sub
+        });
+        const adminEmail = process.env.ADMIN_EMAIL || '';
+        res.json({ token, user, isAdmin: Boolean(adminEmail && user.email === adminEmail) });
+    } catch (error) {
+        console.error('Error verificando credencial de Google:', error.message);
+        res.status(401).json({ error: 'No se pudo verificar la sesión de Google' });
+    }
+});
+
+app.get('/api/auth/session', verificarToken, (req, res) => {
+    const adminEmail = process.env.ADMIN_EMAIL || '';
+    res.json({
+        user: {
+            email: req.user.email,
+            name: req.user.name,
+            picture: req.user.picture || ''
+        },
+        isAdmin: Boolean(adminEmail && req.user.email === adminEmail)
+    });
+});
+
 // ─── Configuración de la Base de Datos ──────────────────────────────
 const db = mysql.createConnection({
     host: process.env.DB_HOST,
@@ -110,7 +217,10 @@ db.connect(err => {
 // ─── RUTAS DE CATEGORÍAS ────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════
 
-app.get('/api/categorias', (req, res) => {
+app.get('/api/categorias', (req, res, next) => {
+    if (req.query.admin === 'true') return verificarAdmin(req, res, next);
+    next();
+}, (req, res) => {
     const isAdmin = req.query.admin === 'true';
     const sql = isAdmin
         ? 'SELECT id, nombre, slug, disponible FROM categorias ORDER BY id'
@@ -122,7 +232,7 @@ app.get('/api/categorias', (req, res) => {
     });
 });
 
-app.post('/api/categorias', (req, res) => {
+app.post('/api/categorias', verificarAdmin, (req, res) => {
     const nombre = req.body && typeof req.body.nombre === 'string' ? req.body.nombre.trim() : '';
     const slug = nombre
         .normalize('NFD')
@@ -150,7 +260,7 @@ app.post('/api/categorias', (req, res) => {
     );
 });
 
-app.put('/api/categorias/:slug', (req, res) => {
+app.put('/api/categorias/:slug', verificarAdmin, (req, res) => {
     const nombre = req.body && typeof req.body.nombre === 'string' ? req.body.nombre.trim() : '';
     const disponible = req.body && req.body.disponible;
 
@@ -182,7 +292,7 @@ app.put('/api/categorias/:slug', (req, res) => {
     );
 });
 
-app.delete('/api/categorias/:slug', (req, res) => {
+app.delete('/api/categorias/:slug', verificarAdmin, (req, res) => {
     db.query(
         'SELECT COUNT(*) AS total FROM productos WHERE categoria = ?',
         [req.params.slug],
@@ -206,7 +316,11 @@ app.delete('/api/categorias/:slug', (req, res) => {
 // ════════════════════════════════════════════════════════════════════
 
 // 1. Obtener todos los productos (Inteligente: admin ve todos, cliente solo disponibles)
-app.get('/api/productos', (req, res) => {
+app.get('/api/productos', (req, res, next) => {
+    const isAdmin = req.query.admin === 'true';
+    if (isAdmin) return verificarAdmin(req, res, next);
+    next();
+}, (req, res) => {
     const isAdmin = req.query.admin === 'true';
     const sql = isAdmin
         ? 'SELECT * FROM productos'
@@ -232,14 +346,14 @@ app.get('/api/productos', (req, res) => {
 });
 
 // 2. Crear nuevo producto (Soporta imagen)
-app.post('/api/productos', upload.single('imagen'), async (req, res) => {
+app.post('/api/productos', verificarAdmin, upload.single('imagen'), async (req, res) => {
     const { nombre, descripcion, precio, categoria } = req.body;
     const nombreLimpio = typeof nombre === 'string' ? nombre.trim() : '';
     const descripcionLimpia = typeof descripcion === 'string' ? descripcion.trim() : '';
     const categoriaLimpia = typeof categoria === 'string' ? categoria.trim() : '';
     const precioNumerico = typeof precio === 'string' && precio.trim() ? Number(precio) : NaN;
-    if (!nombreLimpio || !categoriaLimpia || !Number.isFinite(precioNumerico) || precioNumerico < 0) {
-        return res.status(400).json({ error: 'Nombre, categoría y precio válido son obligatorios' });
+    if (!nombreLimpio || !descripcionLimpia || !categoriaLimpia || !Number.isFinite(precioNumerico) || precioNumerico < 0) {
+        return res.status(400).json({ error: 'Nombre, descripción, categoría y precio válido son obligatorios' });
     }
 
     let imagen_url;
@@ -259,15 +373,15 @@ app.post('/api/productos', upload.single('imagen'), async (req, res) => {
 });
 
 // 3. Editar producto (Soporta actualización de imagen)
-app.put('/api/productos/:id', upload.single('imagen'), async (req, res) => {
+app.put('/api/productos/:id', verificarAdmin, upload.single('imagen'), async (req, res) => {
     const productoId = req.params.id;
     const { nombre, descripcion, precio, categoria } = req.body;
     const nombreLimpio = typeof nombre === 'string' ? nombre.trim() : '';
     const descripcionLimpia = typeof descripcion === 'string' ? descripcion.trim() : '';
     const categoriaLimpia = typeof categoria === 'string' ? categoria.trim() : '';
     const precioNumerico = typeof precio === 'string' && precio.trim() ? Number(precio) : NaN;
-    if (!nombreLimpio || !categoriaLimpia || !Number.isFinite(precioNumerico) || precioNumerico < 0) {
-        return res.status(400).json({ error: 'Nombre, categoría y precio válido son obligatorios' });
+    if (!nombreLimpio || !descripcionLimpia || !categoriaLimpia || !Number.isFinite(precioNumerico) || precioNumerico < 0) {
+        return res.status(400).json({ error: 'Nombre, descripción, categoría y precio válido son obligatorios' });
     }
     
     let sql = `UPDATE productos SET nombre = ?, descripcion = ?, precio = ?, categoria = ? WHERE id = ?`;
@@ -292,7 +406,7 @@ app.put('/api/productos/:id', upload.single('imagen'), async (req, res) => {
 });
 
 // 4. Cambiar Disponibilidad (Switch On/Off)
-app.put('/api/productos/:id/disponibilidad', (req, res) => {
+app.put('/api/productos/:id/disponibilidad', verificarAdmin, (req, res) => {
     const productoId = req.params.id;
     const { disponible } = req.body; 
     
@@ -304,7 +418,7 @@ app.put('/api/productos/:id/disponibilidad', (req, res) => {
 });
 
 // 5. Eliminar un producto
-app.delete('/api/productos/:id', (req, res) => {
+app.delete('/api/productos/:id', verificarAdmin, (req, res) => {
     const productoId = req.params.id;
     const sql = `DELETE FROM productos WHERE id = ?`;
     
@@ -318,7 +432,11 @@ app.delete('/api/productos/:id', (req, res) => {
 // ─── RUTAS DE MESAS ─────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════
 
-app.get('/api/mesas', (req, res) => {
+app.get('/api/mesas', (req, res, next) => {
+    const isAdmin = req.query.admin === 'true';
+    if (isAdmin) return verificarAdmin(req, res, next);
+    next();
+}, (req, res) => {
     const isAdmin = req.query.admin === 'true';
     const sql = isAdmin ? 'SELECT * FROM mesas' : 'SELECT * FROM mesas WHERE disponible = 1';
     db.query(sql, (err, results) => {
@@ -327,7 +445,7 @@ app.get('/api/mesas', (req, res) => {
     });
 });
 
-app.post('/api/mesas', (req, res) => {
+app.post('/api/mesas', verificarAdmin, (req, res) => {
     const { numero } = req.body;
     db.query('INSERT INTO mesas (numero, disponible) VALUES (?, 1)', [numero], (err, result) => {
         if (err) return res.status(500).json({ error: 'Error al crear mesa' });
@@ -335,7 +453,7 @@ app.post('/api/mesas', (req, res) => {
     });
 });
 
-app.put('/api/mesas/:id/disponibilidad', (req, res) => {
+app.put('/api/mesas/:id/disponibilidad', verificarAdmin, (req, res) => {
     const { disponible } = req.body;
     db.query('UPDATE mesas SET disponible = ? WHERE id = ?', [disponible, req.params.id], (err) => {
         if (err) return res.status(500).json({ error: 'Error actualizando mesa' });
@@ -343,7 +461,7 @@ app.put('/api/mesas/:id/disponibilidad', (req, res) => {
     });
 });
 
-app.delete('/api/mesas/:id', (req, res) => {
+app.delete('/api/mesas/:id', verificarAdmin, (req, res) => {
     db.query('DELETE FROM mesas WHERE id = ?', [req.params.id], (err) => {
         if (err) return res.status(500).json({ error: 'Error eliminando mesa' });
         res.json({ mensaje: 'Mesa eliminada' });
@@ -353,12 +471,10 @@ app.delete('/api/mesas/:id', (req, res) => {
 // ════════════════════════════════════════════════════════════════════
 // ─── RUTAS DE MIS PEDIDOS (CLIENTE) ─────────────────────────────────
 // ════════════════════════════════════════════════════════════════════
-app.get('/api/mis-pedidos/:cliente', (req, res) => {
-    const cliente = req.params.cliente;
-    // Traemos los últimos 10 pedidos del cliente
-    const sql = 'SELECT * FROM pedidos WHERE cliente = ? ORDER BY id DESC LIMIT 10';
+app.get('/api/mis-pedidos', verificarToken, (req, res) => {
+    const sql = 'SELECT * FROM pedidos WHERE cliente_email = ? ORDER BY id DESC LIMIT 10';
     
-    db.query(sql, [cliente], (err, results) => {
+    db.query(sql, [req.user.email], (err, results) => {
         if (err) return res.status(500).json({ error: 'Error obteniendo pedidos' });
         if (results.length === 0) return res.json([]);
         
@@ -381,7 +497,7 @@ app.get('/api/mis-pedidos/:cliente', (req, res) => {
 // ─── RUTAS DE PEDIDOS (CON FILTRO DE TIEMPO) ────────────────────────
 // ════════════════════════════════════════════════════════════════════
 
-app.get('/api/pedidos', (req, res) => {
+app.get('/api/pedidos', verificarAdmin, (req, res) => {
     // Leemos qué filtro pide el admin, por defecto 'todos'
     const filtro = req.query.filtro || 'todos';
     let condicionFecha = '1=1'; // Significa "traer todo" por defecto
@@ -411,10 +527,13 @@ app.get('/api/pedidos', (req, res) => {
 });
 
 // 2. Guardar un nuevo pedido (Viene desde el carrito del cliente)
-app.post('/api/pedidos', (req, res) => {
+app.post('/api/pedidos', verificarTokenOpcional, (req, res) => {
     // NUEVO: Recibimos tipo_pedido y mesa
     const { cliente, direccion, hora_entrega, metodo_pago, notas, total, productos, tipo_pedido, mesa } = req.body;
-    const clienteLimpio = typeof cliente === 'string' ? cliente.trim() : '';
+    const clienteLimpio = req.user
+        ? req.user.name.trim()
+        : (typeof cliente === 'string' ? cliente.trim() : '');
+    const clienteEmail = req.user ? req.user.email : null;
     const direccionLimpia = typeof direccion === 'string' ? direccion.trim() : '';
     const horaEntregaLimpia = typeof hora_entrega === 'string' ? hora_entrega.trim() : '';
     const metodoPagoLimpio = typeof metodo_pago === 'string' ? metodo_pago.trim() : '';
@@ -451,9 +570,10 @@ app.post('/api/pedidos', (req, res) => {
         return res.status(400).json({ error: 'El detalle del pedido contiene productos inválidos' });
     }
 
-    const sqlPedido = `INSERT INTO pedidos (cliente, direccion, hora_entrega, metodo_pago, notas, total, tipo_pedido, mesa) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+    const sqlPedido = `INSERT INTO pedidos (cliente, cliente_email, direccion, hora_entrega, metodo_pago, notas, total, tipo_pedido, mesa) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
     const datosPedido = [
         clienteLimpio,
+        clienteEmail,
         tipoPedidoLimpio === 'En mesa' ? 'Consumo en el local' : direccionLimpia,
         horaEntregaLimpia,
         metodoPagoLimpio,
@@ -483,7 +603,7 @@ app.post('/api/pedidos', (req, res) => {
 });
 
 // 3. Actualizar el estado de un pedido (Botones Preparar/Entregar)
-app.put('/api/pedidos/:id/estado', (req, res) => {
+app.put('/api/pedidos/:id/estado', verificarAdmin, (req, res) => {
     const pedidoId = Number(req.params.id);
     const { estado } = req.body;
     if (!Number.isInteger(pedidoId) || pedidoId <= 0 || !['Pendiente', 'Preparando', 'Entregado'].includes(estado)) {
@@ -512,7 +632,7 @@ app.get('/api/pedidos/:id', (req, res) => {
 // ─── RUTAS DE REPORTES Y VENTAS ─────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════
 
-app.get('/api/reportes', (req, res) => {
+app.get('/api/reportes', verificarAdmin, (req, res) => {
     const filtro = req.query.filtro || 'todos';
     
     // Condición para la tabla pedidos normal

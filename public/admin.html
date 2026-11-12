@@ -9,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
             --teal: #3D9EAB; --teal-dark: #2d8a96; --teal-light: #E4F5F7;
@@ -64,6 +65,14 @@
         .order-card { overflow: hidden; transition: opacity 0.25s ease, transform 0.25s ease, max-height 0.25s ease, padding 0.25s ease, border-width 0.25s ease; }
         .order-card.is-removing { opacity: 0; transform: translateY(-8px); max-height: 0 !important; padding-top: 0; padding-bottom: 0; border-width: 0; }
         .orders-empty { grid-column: 1 / -1; padding: 28px 20px; border: 1px dashed #C9E5E8; border-radius: 14px; background: var(--teal-light); color: var(--teal-dark); text-align: center; font-weight: 800; }
+        body.auth-locked > :not(#admin-auth-gate) { visibility: hidden; }
+        .auth-gate { position: fixed; inset: 0; z-index: 5000; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--bg-admin); }
+        .auth-gate-card { width: 100%; max-width: 430px; padding: 30px; border-radius: 18px; background: var(--white); box-shadow: 0 8px 30px rgba(0,0,0,0.1); text-align: center; }
+        .auth-gate-card h1 { margin-bottom: 10px; color: var(--teal-dark); font-size: 1.5rem; }
+        .auth-gate-card p { margin-bottom: 18px; color: var(--warm-2); }
+        .auth-gate-message { color: var(--coral-dark) !important; font-weight: 800; }
+        .auth-gate-button { display: flex; justify-content: center; min-height: 44px; margin: 0 auto; }
+        .auth-gate-reset { margin-top: 16px; border: 0; background: transparent; color: var(--teal-dark); font-weight: 800; cursor: pointer; }
         
         /* Tarjetas Comunes */
         .order-card, .product-card { background: var(--white); border-radius: 16px; padding: 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); border: 1px solid #eee; position: relative; }
@@ -155,6 +164,15 @@
     </style>
 </head>
 <body>
+
+    <div id="admin-auth-gate" class="auth-gate" role="dialog" aria-modal="true" aria-labelledby="admin-auth-title">
+        <div class="auth-gate-card">
+            <h1 id="admin-auth-title">Acceso al panel</h1>
+            <p id="admin-auth-message">Inicia sesión con Google para continuar.</p>
+            <div id="admin-google-button" class="auth-gate-button"></div>
+            <button type="button" id="admin-auth-reset" class="auth-gate-reset" style="display:none;">Cerrar sesión / cambiar cuenta</button>
+        </div>
+    </div>
 
     <div class="mobile-topbar">
         <button class="menu-toggle" id="open-menu"><i class="fa-solid fa-bars"></i></button>
@@ -324,6 +342,8 @@
 // Usa el backend local solo durante desarrollo; en producción, comparte el origen.
 const isLocalHost = ['', 'localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 const API_URL = isLocalHost && window.location.port !== '3000' ? 'http://localhost:3000' : '';
+let adminJwt = localStorage.getItem('localiapp_jwt') || '';
+let adminAutorizado = false;
 
 let ultimoPedidoId = 0;
 let vistaPedidos = 'cola';
@@ -341,8 +361,121 @@ const imageUrl = url => /^https?:\/\//i.test(url) ? url : `${API_URL}${url}`;
 function fetchConTimeout(url, opciones = {}, tiempo = 10000) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), tiempo);
-    return fetch(url, { ...opciones, signal: controller.signal }).finally(() => clearTimeout(timeout));
+    const headers = new Headers(opciones.headers || {});
+    if (adminJwt) headers.set('Authorization', 'Bearer ' + adminJwt);
+    return fetch(url, { ...opciones, headers, signal: controller.signal }).finally(() => clearTimeout(timeout));
 }
+
+const adminAuthGate = document.getElementById('admin-auth-gate');
+const adminAuthMessage = document.getElementById('admin-auth-message');
+const adminAuthReset = document.getElementById('admin-auth-reset');
+
+function bloquearPanel(mensaje, permiteCambiarCuenta = false) {
+    adminAutorizado = false;
+    document.body.classList.add('auth-locked');
+    adminAuthGate.style.display = 'flex';
+    adminAuthMessage.textContent = mensaje;
+    adminAuthMessage.classList.toggle('auth-gate-message', permiteCambiarCuenta);
+    adminAuthReset.style.display = permiteCambiarCuenta ? 'inline-block' : 'none';
+}
+
+function mostrarPanelAdmin() {
+    adminAutorizado = true;
+    adminAuthGate.style.display = 'none';
+    document.body.classList.remove('auth-locked');
+}
+
+function cerrarSesionAdmin() {
+    adminJwt = '';
+    localStorage.removeItem('localiapp_jwt');
+    localStorage.removeItem('localiapp_user');
+    if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
+    bloquearPanel('Inicia sesión con la cuenta de Google administradora.');
+    inicializarGoogleAdmin();
+}
+
+async function esperarGoogleIdentity() {
+    for (let intento = 0; intento < 100; intento++) {
+        if (window.google && google.accounts && google.accounts.id) return;
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error('No se pudo cargar Google Identity Services');
+}
+
+async function completarLoginAdmin(response) {
+    adminAuthMessage.textContent = 'Verificando tu cuenta...';
+    try {
+        const res = await fetchConTimeout(`${API_URL}/api/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential: response.credential })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'No se pudo verificar la cuenta');
+        adminJwt = data.token;
+        localStorage.setItem('localiapp_jwt', adminJwt);
+        localStorage.setItem('localiapp_user', JSON.stringify(data.user));
+        if (!data.isAdmin) {
+            bloquearPanel('Acceso denegado: tu cuenta no es administradora.', true);
+            return;
+        }
+        mostrarPanelAdmin();
+        cargarPedidos();
+    } catch (error) {
+        console.error('Error iniciando sesión en el panel:', error);
+        bloquearPanel(error.message || 'No se pudo iniciar sesión. Intenta de nuevo.');
+    }
+}
+
+async function inicializarGoogleAdmin() {
+    try {
+        const response = await fetchConTimeout(`${API_URL}/api/config`);
+        if (!response.ok) throw new Error('No se pudo cargar la configuración de autenticación');
+        const config = await response.json();
+        if (!config.googleClientId) throw new Error('Falta configurar GOOGLE_CLIENT_ID en el servidor');
+        await esperarGoogleIdentity();
+        google.accounts.id.initialize({
+            client_id: config.googleClientId,
+            callback: completarLoginAdmin,
+            auto_select: false
+        });
+        const container = document.getElementById('admin-google-button');
+        container.replaceChildren();
+        google.accounts.id.renderButton(container, { type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill', width: 280 });
+    } catch (error) {
+        console.error('Error configurando Google Identity Services:', error);
+        bloquearPanel(error.message || 'No se pudo cargar el inicio de sesión con Google.');
+    }
+}
+
+async function verificarSesionAdmin() {
+    if (!adminJwt) {
+        bloquearPanel('Inicia sesión con Google para continuar.');
+        return inicializarGoogleAdmin();
+    }
+    try {
+        const response = await fetchConTimeout(`${API_URL}/api/auth/session`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'La sesión expiró');
+        if (!data.isAdmin) {
+            bloquearPanel('Acceso denegado: tu cuenta no es administradora.', true);
+            inicializarGoogleAdmin();
+            return;
+        }
+        mostrarPanelAdmin();
+        cargarPedidos();
+    } catch (error) {
+        adminJwt = '';
+        localStorage.removeItem('localiapp_jwt');
+        localStorage.removeItem('localiapp_user');
+        bloquearPanel('Tu sesión expiró o no es válida. Inicia sesión nuevamente.');
+        await inicializarGoogleAdmin();
+    }
+}
+
+adminAuthReset.addEventListener('click', cerrarSesionAdmin);
+document.body.classList.add('auth-locked');
+document.addEventListener('DOMContentLoaded', verificarSesionAdmin);
 
 // Lógica de navegación entre pestañas
 const tabs = {
@@ -399,6 +532,7 @@ document.getElementById('btn-close-prod-modal').addEventListener('click', () => 
 
 // ─── LÓGICA DE PEDIDOS ───────────────────────────────────────────────
 async function cargarPedidos() {
+    if (!adminAutorizado) return;
     if (pedidosEnActualizacion.size > 0) return;
     if (pedidosEnCarga) {
         recargaPedidosPendiente = true;
@@ -1117,6 +1251,10 @@ document.getElementById('btn-logout').addEventListener('click', (e) => {
         color: '#2A1F1A'
     }).then((result) => {
         if (result.isConfirmed) {
+            adminJwt = '';
+            localStorage.removeItem('localiapp_jwt');
+            localStorage.removeItem('localiapp_user');
+            if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
             window.location.href = '/'; 
         }
     });

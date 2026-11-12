@@ -18,11 +18,21 @@ const escapeHtml = value => String(value == null ? '' : value).replace(/[&<>"']/
 }[character]));
 let errorRadarNotificado = false;
 let consultandoEstadoPedido = false;
+let authToken = localStorage.getItem('localiapp_jwt') || '';
+let authUser = null;
+
+try {
+    authUser = JSON.parse(localStorage.getItem('localiapp_user') || 'null');
+} catch (error) {
+    localStorage.removeItem('localiapp_user');
+}
 
 function fetchConTimeout(url, opciones = {}, tiempo = 10000) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), tiempo);
-    return fetch(url, { ...opciones, signal: controller.signal }).finally(() => clearTimeout(timeout));
+    const headers = new Headers(opciones.headers || {});
+    if (authToken) headers.set('Authorization', 'Bearer ' + authToken);
+    return fetch(url, { ...opciones, headers, signal: controller.signal }).finally(() => clearTimeout(timeout));
 }
 
 const iconosCategoria = {
@@ -319,6 +329,8 @@ const checkoutItemsContainer = $('checkout-items');
 const checkoutTotalPrice = $('checkout-total-price');
 const checkoutForm = $('checkout-form');
 const googleLoginBtn = $('google-login-btn');
+const continueAsGuestBtn = $('continue-as-guest');
+const clientNameInput = $('client-name');
 const authSection = $('auth-section');
 const deliverySection = $('delivery-section');
 const getLocationBtn = $('get-location-btn');
@@ -344,6 +356,14 @@ function openCheckoutModal() {
     });
 
     checkoutTotalPrice.textContent = fmt(totalPrice());
+    if (authUser) {
+        authSection.style.display = 'none';
+        deliverySection.style.display = 'block';
+        clientNameInput.value = authUser.name;
+    } else {
+        authSection.style.display = 'block';
+        deliverySection.style.display = 'none';
+    }
     checkoutModal.classList.add('active');
     document.body.style.overflow = 'hidden'; 
 }
@@ -367,13 +387,12 @@ if(floatingCart) {
     });
 }
 
-if(googleLoginBtn) {
-    googleLoginBtn.addEventListener('click', () => {
-        googleLoginBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Conectando...';
-        setTimeout(() => {
-            authSection.style.display = 'none';
-            deliverySection.style.display = 'block';
-        }, 800);
+if (continueAsGuestBtn) {
+    continueAsGuestBtn.addEventListener('click', () => {
+        authSection.style.display = 'none';
+        deliverySection.style.display = 'block';
+        clientNameInput.value = '';
+        clientNameInput.focus();
     });
 }
 
@@ -422,6 +441,12 @@ if(checkoutForm) {
 
         const tipoPedido = document.getElementById('tipo_pedido_val').value;
         const numeroMesa = tipoPedido === 'En mesa' ? document.getElementById('select-mesa').value : null;
+        const nombreCliente = authUser ? authUser.name : clientNameInput.value.trim();
+
+        if (!nombreCliente) {
+            Swal.fire('Falta tu nombre', 'Escribe tu nombre para identificar el pedido.', 'warning');
+            return;
+        }
 
         if (tipoPedido === 'En mesa' && !numeroMesa) {
             Swal.fire('Falta la mesa', 'Por favor selecciona en qué mesa estás.', 'warning');
@@ -429,7 +454,7 @@ if(checkoutForm) {
         }
 
         const pedidoFinal = {
-            cliente: "Usuario de Google", 
+            cliente: nombreCliente,
             direccion: tipoPedido === 'Domicilio' ? clientAddressInput.value : 'Consumo en el local',
             hora_entrega: horaFinal,
             metodo_pago: $('payment-method').value,
@@ -553,37 +578,118 @@ const btnLoginHeader = $('btn-login-header');
 const btnLogoutHeader = $('btn-logout-header');
 const viewUnlogged = $('view-unlogged');
 const viewLogged = $('view-logged');
+const adminPanelLink = $('admin-panel-link');
 
-if(btnLoginHeader) {
-    btnLoginHeader.addEventListener('click', () => {
-        btnLoginHeader.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Conectando...';
-        
-        setTimeout(() => {
-            viewUnlogged.style.display = 'none';
-            viewLogged.style.display = 'block';
-            btnLoginHeader.innerHTML = '<img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" style="width: 16px;"> Continuar con Google';
-            
-            Swal.fire({
-                title: '¡Sesión Iniciada!',
-                text: 'Bienvenido de nuevo.',
-                icon: 'success',
-                confirmButtonColor: '#3D9EAB',
-                timer: 2000,
-                showConfirmButton: false,
-                background: '#FFF9F2',
-                color: '#2A1F1A'
-            });
-        }, 1000);
-    });
+function actualizarInterfazSesion(user, esAdmin = false) {
+    authUser = user;
+    viewUnlogged.style.display = user ? 'none' : 'block';
+    viewLogged.style.display = user ? 'block' : 'none';
+    adminPanelLink.style.display = user && esAdmin ? 'flex' : 'none';
+    if (!user) return;
+
+    $('user-profile-name').textContent = user.name || 'Usuario';
+    $('user-profile-email').textContent = user.email || '';
+    const picture = $('user-profile-picture');
+    picture.src = user.picture || '';
+    picture.alt = user.name ? `Foto de ${user.name}` : 'Foto de perfil';
+    if (clientNameInput) clientNameInput.value = user.name || '';
+    if (authSection) authSection.style.display = 'none';
+    if (deliverySection) deliverySection.style.display = 'block';
+}
+
+function cerrarSesionCliente(event) {
+    if (event) event.preventDefault();
+    authToken = '';
+    authUser = null;
+    localStorage.removeItem('localiapp_jwt');
+    localStorage.removeItem('localiapp_user');
+    actualizarInterfazSesion(null);
+    if (authSection) authSection.style.display = 'block';
+    if (deliverySection) deliverySection.style.display = 'none';
+    if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
+    if (userDropdown) userDropdown.classList.remove('active');
+}
+
+async function esperarGoogleIdentity() {
+    for (let intento = 0; intento < 100; intento++) {
+        if (window.google && google.accounts && google.accounts.id) return;
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error('No se pudo cargar Google Identity Services');
+}
+
+async function completarLoginGoogle(response) {
+    try {
+        const res = await fetchConTimeout(`${API_URL}/api/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential: response.credential })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'No se pudo iniciar sesión con Google');
+        authToken = data.token;
+        localStorage.setItem('localiapp_jwt', authToken);
+        localStorage.setItem('localiapp_user', JSON.stringify(data.user));
+        actualizarInterfazSesion(data.user, data.isAdmin);
+        authSection.style.display = 'none';
+        deliverySection.style.display = 'block';
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success',
+            title: `Sesión iniciada como ${data.user.name}`,
+            showConfirmButton: false, timer: 2500
+        });
+    } catch (error) {
+        console.error('Error iniciando sesión con Google:', error);
+        Swal.fire('No se pudo iniciar sesión', error.message || 'Intenta de nuevo.', 'error');
+    }
+}
+
+async function configurarInicioGoogle() {
+    try {
+        const configResponse = await fetchConTimeout(`${API_URL}/api/config`);
+        if (!configResponse.ok) throw new Error('No se pudo cargar la configuración de autenticación');
+        const config = await configResponse.json();
+        if (!config.googleClientId) throw new Error('El inicio de sesión con Google no está configurado');
+        await esperarGoogleIdentity();
+        google.accounts.id.initialize({
+            client_id: config.googleClientId,
+            callback: completarLoginGoogle,
+            auto_select: false
+        });
+        if (btnLoginHeader) {
+            google.accounts.id.renderButton(btnLoginHeader, { type: 'standard', theme: 'outline', size: 'medium', text: 'continue_with', shape: 'pill', width: 250 });
+        }
+        if (googleLoginBtn) {
+            google.accounts.id.renderButton(googleLoginBtn, { type: 'standard', theme: 'outline', size: 'large', text: 'continue_with', shape: 'pill', width: 320 });
+        }
+    } catch (error) {
+        console.error('Error configurando Google Identity Services:', error);
+        Swal.fire('Inicio de sesión no disponible', 'No se pudo cargar la autenticación de Google.', 'error');
+    }
+}
+
+async function restaurarSesionCliente() {
+    if (!authToken) {
+        actualizarInterfazSesion(null);
+        return;
+    }
+    try {
+        const response = await fetchConTimeout(`${API_URL}/api/auth/session`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Sesión inválida');
+        localStorage.setItem('localiapp_user', JSON.stringify(data.user));
+        actualizarInterfazSesion(data.user, data.isAdmin);
+    } catch (error) {
+        console.error('Error verificando sesión:', error);
+        authToken = '';
+        localStorage.removeItem('localiapp_jwt');
+        localStorage.removeItem('localiapp_user');
+        actualizarInterfazSesion(null);
+    }
 }
 
 if(btnLogoutHeader) {
-    btnLogoutHeader.addEventListener('click', (e) => {
-        e.preventDefault();
-        viewLogged.style.display = 'none';
-        viewUnlogged.style.display = 'block';
-        userDropdown.classList.remove('active');
-    });
+    btnLogoutHeader.addEventListener('click', cerrarSesionCliente);
 }
 
 // ─── LÓGICA DE NOTIFICACIONES REALES (RADAR DEL CLIENTE) ──────────────
@@ -710,8 +816,7 @@ async function abrirMisPedidos() {
     }
     
     try {
-        // En tu app los pedidos se guardan actualmente bajo "Usuario de Google"
-        const res = await fetchConTimeout(`${API_URL}/api/mis-pedidos/Usuario de Google`);
+        const res = await fetchConTimeout(`${API_URL}/api/mis-pedidos`);
         if (!res.ok) throw new Error('Error consultando los pedidos');
         const pedidos = await res.json();
         
@@ -758,6 +863,8 @@ async function abrirMisPedidos() {
 }
 // ─── Iniciar Aplicación ───────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+    configurarInicioGoogle();
+    restaurarSesionCliente();
     try {
         await cargarCategoriasCliente();
     } catch (error) {
